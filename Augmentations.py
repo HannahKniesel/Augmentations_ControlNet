@@ -142,7 +142,7 @@ if __name__ == "__main__":
     for img_idx, path in enumerate(data_paths): 
         print(f"Image {img_idx}/{len(data_paths)}")
         init_image = np.array(Image.open(path))
-        canny_image = cv2.Canny(init_image, 100, 150)
+        canny_image = cv2.Canny(init_image, 100, 200)
         canny_image = canny_image[:,:,None]
         canny_image = np.concatenate([canny_image,canny_image,canny_image], axis = 2)
         canny_image = Image.fromarray(canny_image)
