@@ -14,6 +14,8 @@ import time
 from datetime import timedelta
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+# TODO make full dataset with coco format
+
 
 classes=['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
             'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
@@ -89,11 +91,11 @@ def image2text(image, seed = 42):
 
 def vqa(image, seed = 42):
     torch.manual_seed(seed)
-    question = "An image of "
+    question = "What is in the image?"
     inputs = vqa_processor(image, question, return_tensors="pt").to(device)
     out = vqa_model.generate(**inputs)
     generated_text = vqa_processor.decode(out[0], skip_special_tokens=True)
-    input_text = question + generated_text
+    input_text = "A photograph of " + generated_text
     return input_text
 
 def augment_image_controlnet(image, canny_image, prompt, seed = 42):
@@ -169,7 +171,7 @@ if __name__ == "__main__":
                 prompt = image2text(image, seed)
             elif(args.prompt_definition == "annotations"):
                 anno_str = " ".join(annotated_classes)
-                prompt = "An image of "+anno_str
+                prompt = "A photograph of "+anno_str
             image = augment_image_controlnet(image, canny_image, prompt, seed)
 
             while(np.max(image) == np.min(image)):
