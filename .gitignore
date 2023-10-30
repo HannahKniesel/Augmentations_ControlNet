@@ -160,4 +160,4 @@ cython_debug/
 #.idea/
 
 # additional files
-./coco_stuff10k*
+/coco_stuff10k*
