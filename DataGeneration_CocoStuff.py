@@ -121,10 +121,13 @@ if __name__ == "__main__":
     parser.add_argument('--coco_path', type = str, default="./coco_stuff10k/")
     parser.add_argument('--save_path', type = str, default="./coco_stuff10k_augmented/")
 
-
     parser.add_argument('--iterative_img', action='store_true')
-    parser.add_argument('--save_number_images', type = int, default=50)
     parser.add_argument('--num_augmentations', type = int, default=4)
+
+    parser.add_argument('--start_idx', type = int, default=-1)
+    parser.add_argument('--end_idx', type = int, default=-1)
+
+
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
@@ -141,6 +144,14 @@ if __name__ == "__main__":
     os.makedirs(save_path+annotations_folder, exist_ok=True)
 
     data_paths = glob(args.coco_path+images_folder+"*.jpg")
+
+    if((args.start_idx >= 0) and (args.end_idx >= 0)):
+        data_paths = data_paths[args.start_idx:args.end_idx]
+    elif(args.end_idx >= 0):
+        data_paths = data_paths[:args.end_idx]
+    elif(args.start >= 0):
+        data_paths = data_paths[args.start_idx:]
+
     annotations_dir = args.coco_path+annotations_folder
     #annotations_paths = glob(annotations_dir+"*.png")
 
