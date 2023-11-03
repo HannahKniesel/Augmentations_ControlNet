@@ -160,4 +160,13 @@ cython_debug/
 #.idea/
 
 # additional files
+*.sh
+*.yaml
+.submit.*
 /coco_stuff10k*
+/slurm_log*
+*data*
+
+
+coco_stuff10k
+data
