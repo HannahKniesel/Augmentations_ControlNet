@@ -181,7 +181,7 @@ if __name__ == "__main__":
             # copy annotation for this image
             shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
 
-        save_example(init_image, annotation, canny_image, augmentations, prompts, annotated_classes, save_path, img_idx)
+        save_example(init_image, annotation, condition_image, augmentations, prompts, annotated_classes, save_path, img_idx)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
