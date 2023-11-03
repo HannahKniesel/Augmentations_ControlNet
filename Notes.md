@@ -2,7 +2,7 @@
 ```bash
 docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v ~/Documents/Code/RL_SyntheticData/Augmentations_ControlNet/:/workspace/ -v ~/Documents/Data/StandardCV/coco_stuff10k/:/workspace/coco_stuff10k/ -w /workspace/ --name augmentation_c hannahkniesel/augmentation_controlnet bash
 
-    docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v ~/Documents/Code/RL_SyntheticData/Augmentations_ControlNet/:/workspace/ -v /media/hansel/Volume/Datasets/CV/coco_stuff10k/:/workspace/coco_stuff10k/ -w /workspace/ --name augmentation_c hannahkniesel/augmentation_controlnet bash
+    docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v ~/Documents/Code/RL_SyntheticData/Augmentations_ControlNet/:/Augmentations_ControlNet/ -v /media/hansel/SSD/Data/StandardCV/:/Augmentations_ControlNet/data/ -w /Augmentations_ControlNet/ --name augmentation_c hannahkniesel/augmentation_controlnet bash
 ```
 
 # Run Code for augmentations 
