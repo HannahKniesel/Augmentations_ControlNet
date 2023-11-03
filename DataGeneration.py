@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    save_path = save_path+"/"+args.prompt_definition
+    save_path = save_path+"/"+args.condition+"_"+args.prompt_definition
     
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(save_path+images_folder, exist_ok=True)
