@@ -13,7 +13,7 @@ import argparse
 import time
 from datetime import timedelta
 import shutil
-device = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def save_example(image, annotation, canny_image, augmentations, prompts, annotated_classes, folder, idx):
     fig,axs = plt.subplots(1,3+len(augmentations), figsize=(10+(5*len(augmentations)),15))
@@ -165,7 +165,7 @@ if __name__ == "__main__":
         elif(args.condition == "canny"):
             condition_image = get_canny(init_image) 
 
-        augmentations = []
+        augmentations = [init_image.copy()]
         prompts = []
         image = init_image.copy()
         if(len(image.shape) != 3):

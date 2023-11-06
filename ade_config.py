@@ -1,5 +1,5 @@
 data_path = "./data/ade/ADEChallengeData2016/"
-save_path = "./data/ade_augmented/"
+save_path = "./data/ade_augmented/" # save aumentations to + filter this data
 
 images_folder = "/images/training/"
 annotations_folder = "/annotations/training/"
