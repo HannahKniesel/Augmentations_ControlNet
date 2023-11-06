@@ -13,7 +13,7 @@ import argparse
 import time
 from datetime import timedelta
 import shutil
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
 
 def save_example(image, annotation, canny_image, augmentations, prompts, annotated_classes, folder, idx):
     fig,axs = plt.subplots(1,3+len(augmentations), figsize=(10+(5*len(augmentations)),15))
@@ -36,13 +36,21 @@ def save_example(image, annotation, canny_image, augmentations, prompts, annotat
     plt.close()
     return 
 
+def image2text_local(model, image, seed = 42):
+    # image to text with vit-gpt2
+    torch.manual_seed(seed)
+    if(type(image) != Image.Image):
+        image = Image.fromarray(image)
+    input_text = model(image)
+    input_text = input_text[0]['generated_text']
+    return input_text
 
 def image2text(model, processor, image, prompt, seed = 42):
     # image to text with vit-gpt2
     torch.manual_seed(seed)
     if(type(image) != Image.Image):
         image = Image.fromarray(image)
-    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device="cuda", dtype=torch.float16)
+    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device=device, dtype=torch.float16)
     generated_ids = model.generate(**inputs)
     input_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
     return input_text
@@ -86,6 +94,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type = str, default="cocostuff10k", choices = ["ade", "cocostuff10k"])
     parser.add_argument('--condition', type = str, default="canny", choices = ["canny", "segmentation"])
     parser.add_argument('--num_augmentations', type = int, default=4)
+    parser.add_argument('--local', action='store_true')
+
 
     parser.add_argument('--start_idx', type = int, default=-1)
     parser.add_argument('--end_idx', type = int, default=-1)
@@ -102,6 +112,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     save_path = save_path+"/"+args.condition+"_"+args.prompt_definition
+    print(f"Save to: {save_path}")
     
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(save_path+images_folder, exist_ok=True)
@@ -111,16 +122,24 @@ if __name__ == "__main__":
 
     if((args.start_idx >= 0) and (args.end_idx >= 0)):
         data_paths = data_paths[args.start_idx:args.end_idx]
+        start_idx = args.start_idx
     elif(args.end_idx >= 0):
         data_paths = data_paths[:args.end_idx]
     elif(args.start_idx >= 0):
         data_paths = data_paths[args.start_idx:]
+        start_idx = args.start_idx
+
 
     annotations_dir = data_path+annotations_folder
 
     # load models
-    processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-    model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
+    if(args.local):
+        model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
+    else:
+        processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
+        model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
+
+
     if(args.condition =="canny"):
         controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny", torch_dtype=torch.float16)
     elif(args.condition == "segmentation"):
@@ -162,7 +181,11 @@ if __name__ == "__main__":
                     anno_str = ", ".join(annotated_classes)
                     prompt = "Describe the image using some of the following words: "+str(anno_str)
                     
-                prompt = image2text(model, processor, image, prompt, seed)
+                if(args.local): 
+                    prompt = image2text_local(model, image, seed)
+                else: 
+                    prompt = image2text(model, processor, image, prompt, seed)
+
             if(prompt is not None):
                 prompt = prompt+", realistic looking, high-quality, extremely detailed, 4K, HQ"
             
@@ -181,7 +204,7 @@ if __name__ == "__main__":
             # copy annotation for this image
             shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
 
-        save_example(init_image, annotation, condition_image, augmentations, prompts, annotated_classes, save_path, img_idx)
+        save_example(init_image, annotation, condition_image, augmentations, prompts, annotated_classes, save_path, img_idx+start_idx)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
