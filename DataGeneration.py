@@ -49,6 +49,9 @@ def image2text(model, processor, image, prompt, seed = 42):
     # image to text with vit-gpt2
     torch.manual_seed(seed)
     if(type(image) != Image.Image):
+        print(image.shape)
+        if(image.shape[0] <=3): 
+            image = image.transpose(1,2,0)
         image = Image.fromarray(image)
     inputs = processor(images=image, text=prompt, return_tensors="pt").to(device=device, dtype=torch.float16)
     generated_ids = model.generate(**inputs)
