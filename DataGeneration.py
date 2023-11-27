@@ -122,7 +122,7 @@ if __name__ == "__main__":
     os.makedirs(save_path+annotations_folder, exist_ok=True)
 
     data_paths = glob(data_path+images_folder+"*.jpg")
-
+    start_idx = 0
     if((args.start_idx >= 0) and (args.end_idx >= 0)):
         data_paths = data_paths[args.start_idx:args.end_idx]
         start_idx = args.start_idx
