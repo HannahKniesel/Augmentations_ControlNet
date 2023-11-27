@@ -28,7 +28,7 @@ def save_example(image, annotation, canny_image, augmentations, prompts, annotat
     for ax in axs:
         ax.set_axis_off()
 
-    str_idx = str(idx).zfill(4)
+    str_idx = str(idx).zfill(6)
     save_dir = folder+"/"
     os.makedirs(save_dir, exist_ok = True)
     plt.tight_layout()
