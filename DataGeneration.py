@@ -153,7 +153,7 @@ if __name__ == "__main__":
     controlnet_pipe.enable_model_cpu_offload()
 
     for img_idx, path in enumerate(data_paths): 
-        print(f"Image {img_idx}/{len(data_paths)}")
+        print(f"Image {img_idx+start_idx}/{len(data_paths)+start_idx}")
         init_image = np.array(Image.open(path))
     
         annotation_path = annotations_dir+Path(path).stem+".png"
