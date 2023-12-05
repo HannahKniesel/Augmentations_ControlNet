@@ -211,7 +211,7 @@ if __name__ == "__main__":
     if((args.filter_by == "uncertainty") or (args.filter_by == "uncertainty_gt")):
         segmentation_model = torch.jit.load(args.model_path).cuda()
 
-    for path in image_paths: 
+    for idx, path in enumerate(image_paths): 
         p = Path(path)
         n = p.stem
         n = ("_").join(n.split("_")[:-1])
@@ -229,6 +229,7 @@ if __name__ == "__main__":
             augmentations = filter_uncertainty_gt(augmentations, path, args.num_augmentations, segmentation_model, args.num_uncertainty_samples)
 
         lines.extend(augmentations)
+        print(f"Image {idx}/{len(image_paths)}")
 
     with open(save_path, 'w') as f:
         for line in lines: 
