@@ -4,8 +4,8 @@ from pathlib import Path
 import shutil
 
 # Rename
-img_dir = "data/ade_augmented/canny_img2text/images/training/"
-mask_dir = "data/ade_augmented/canny_img2text/annotations/training/"
+img_dir = "data/ade_augmented/segmentation_img2text/images/training/"
+mask_dir = "data/ade_augmented/segmentation_img2text/annotations/training/"
 
 img_paths = sorted(glob.glob(img_dir +"*.jpg"))
 mask_paths = sorted(glob.glob(mask_dir+"*.png"))
