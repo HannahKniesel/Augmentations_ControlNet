@@ -11,8 +11,11 @@ from PIL import Image
 
 save_imgs = True
 if(save_imgs):
-    save_to = "./Debug/"
-    os.makedirs(save_to, exist_ok=True)
+    save_to_uncertainty = "./Debug_uncertainty/"
+    os.makedirs(save_to_uncertainty, exist_ok=True)
+    save_to_uncertainty_gt = "./Debug_uncertaintyGT/"
+    os.makedirs(save_to_uncertainty_gt, exist_ok=True)
+
 
 
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -89,7 +92,7 @@ def filter_uncertainty(augmentations, path, num_augmentations, model, num_sample
             axis[idx+1].set_title(uncertainty)
         for ax in axis: 
             ax.set_axis_off()
-        plt.savefig(save_to+Path(path).stem+".jpg")
+        plt.savefig(save_to_uncertainty+Path(path).stem+".jpg")
         plt.close()
 
     # pick augmentations 
@@ -149,7 +152,7 @@ def filter_uncertainty_gt(augmentations, path, num_augmentations, model, num_sam
             axis[idx+1].set_title(f"Min Mean: {minimize}\nMaximize std: {maximize}\nScore: {score}" )
         for ax in axis: 
             ax.set_axis_off()
-        plt.savefig("./Debug/"+Path(path).stem+".jpg")
+        plt.savefig(save_to_uncertainty_gt+Path(path).stem+".jpg")
         plt.close()
 
     # pick augmentations 
