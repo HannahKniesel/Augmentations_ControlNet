@@ -10,10 +10,14 @@ import torchvision
 from PIL import Image
 
 save_imgs = True
+if(save_imgs):
+    save_to = "./Debug/"
+    os.makedirs(save_to, exist_ok=True)
 
 
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-                                                    #  torchvision.transforms.Resize((512, 2048))])
+                                                      #torchvision.transforms.Resize((512, 2048))])
+bce = torch.nn.BCEWithLogitsLoss()
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, root_path, mode, transform = None):
@@ -85,6 +89,66 @@ def filter_uncertainty(augmentations, path, num_augmentations, model, num_sample
             axis[idx+1].set_title(uncertainty)
         for ax in axis: 
             ax.set_axis_off()
+        plt.savefig(save_to+Path(path).stem+".jpg")
+        plt.close()
+
+    # pick augmentations 
+    picked_augmentations = augmentations[:num_augmentations]
+    filtered_augmentations.extend(picked_augmentations)
+    return filtered_augmentations
+
+def filter_uncertainty_gt(augmentations, path, num_augmentations, model, num_samples = 5):
+    # add initial image (no augmentation)
+    filtered_augmentations = [Path(path).stem+".jpg"]
+    # remove real image from augmentations list
+    augmentations.remove(Path(path).stem+".jpg")
+    root = Path(path).parent
+    minimize_mean = []
+    maximize_std = []
+    for augmentation in augmentations: 
+
+        gt_path = str(root.parent.parent) + "/annotations/" + root.stem + "/" + augmentation.split(".")[0] + ".png"
+        gt = torch.from_numpy(np.array(Image.open(gt_path)))
+        gt_onehot = torch.zeros((1, 150, gt.shape[-2], gt.shape[-1]))
+        for j in range(150):
+            gt_onehot[0,j,:,:] = (gt == j)
+        img = np.array(Image.open(root / augmentation))
+        img = totensor_transform(img).cuda().float()[None]
+        outs = []
+        loss = []
+        for i in range(num_samples):
+            out = model(img).detach().cpu()
+            resize = torchvision.transforms.Resize((out.shape[-2], out.shape[-1]), antialias=True)
+            gt_resized = resize(gt_onehot)
+            loss.append(bce(out,gt_resized))
+            outs.append(out)       
+        mean_prediction = torch.mean(torch.concatenate(outs), dim = 0) 
+        minimize_mean.append(bce(mean_prediction[None], gt_resized)) # mean prediction should match gt
+        maximize_std.append(torch.std(torch.Tensor(loss))) # std over all predictions should be high (similar as high std in losses)
+        
+    scores = []
+    for minimize, maximize in zip(minimize_mean, maximize_std):
+        scores.append(-1*minimize + maximize) # minimize loss and maximize uncertainty
+    
+    # TODO
+    augmentations = [x for _, x in sorted(zip(scores, augmentations), reverse=True)]
+    minimize_mean = [x for _, x in sorted(zip(scores, minimize_mean), reverse=True)]
+    maximize_std = [x for _, x in sorted(zip(scores, maximize_std), reverse=True)]
+
+
+
+    if(save_imgs):
+        # visualize
+        fig,axis = plt.subplots(1,1+len(augmentations), figsize = ((1+len(augmentations))*5,5))
+        img = np.array(Image.open(path))
+
+        axis[0].imshow(img)
+        for idx, (augmentation, minimize, maximize, score) in enumerate(zip(augmentations, minimize_mean, maximize_std, sorted(scores, reverse=True))): 
+            img = np.array(Image.open(root / augmentation))
+            axis[idx+1].imshow(img)
+            axis[idx+1].set_title(f"Min Mean: {minimize}\nMaximize std: {maximize}\nScore: {score}" )
+        for ax in axis: 
+            ax.set_axis_off()
         plt.savefig("./Debug/"+Path(path).stem+".jpg")
         plt.close()
 
@@ -121,7 +185,7 @@ if __name__ == "__main__":
 
 
     parser.add_argument('--name', type = str, default="default")
-    parser.add_argument('--filter_by', type = str, choices=["random", "synthetic_only", "real_only", "uncertainty"])
+    parser.add_argument('--filter_by', type = str, choices=["random", "synthetic_only", "real_only", "uncertainty", "uncertainty_gt"])
     parser.add_argument('--num_augmentations', type = int, default=1)
     parser.add_argument('--num_uncertainty_samples', type = int, default=5)
     parser.add_argument('--model_path', type = str, default="./SegmentationModel/train_model_scripted.pt")
@@ -141,7 +205,7 @@ if __name__ == "__main__":
     image_paths = glob(args.data_path+"/"+args.images_folder+"*_000.jpg")
     lines = []
 
-    if(args.filter_by == "uncertainty"):
+    if((args.filter_by == "uncertainty") or (args.filter_by == "uncertainty_gt")):
         segmentation_model = torch.jit.load(args.model_path).cuda()
 
     for path in image_paths: 
@@ -158,6 +222,9 @@ if __name__ == "__main__":
             augmentations = filter_real_only(path)
         elif(args.filter_by == "uncertainty"):
             augmentations = filter_uncertainty(augmentations, path, args.num_augmentations, segmentation_model, args.num_uncertainty_samples)
+        elif(args.filter_by == "uncertainty_gt"):
+            augmentations = filter_uncertainty_gt(augmentations, path, args.num_augmentations, segmentation_model, args.num_uncertainty_samples)
+
         lines.extend(augmentations)
 
     with open(save_path, 'w') as f:
