@@ -168,6 +168,17 @@ if __name__ == "__main__":
         augmentations = [init_image.copy()]
         prompts = []
         image = init_image.copy()
+
+        # save init image 
+        name = Path(path).stem.split(".")
+        name[0] = name[0] + "_" + str(0).zfill(3)
+        name = (".").join(name)
+        image_pil = Image.fromarray(image)
+        image_pil.save(save_path+images_folder+name+".jpg")
+
+        # copy annotation for this image
+        shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
+
         if(len(image.shape) != 3):
             image = np.stack([image,image,image], axis = 0)
         for i in range(args.num_augmentations):
@@ -200,7 +211,7 @@ if __name__ == "__main__":
 
             # save augmented image 
             name = Path(path).stem.split(".")
-            name[0] = name[0] + "_" + str(i).zfill(3)
+            name[0] = name[0] + "_" + str(i+1).zfill(3)
             name = (".").join(name)
             image.save(save_path+images_folder+name+".jpg")
 

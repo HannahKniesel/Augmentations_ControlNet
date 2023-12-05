@@ -170,3 +170,6 @@ cython_debug/
 
 coco_stuff10k
 data
+TestUncertainties
+SegmentationModel
+Debug

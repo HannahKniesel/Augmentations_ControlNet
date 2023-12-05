@@ -5,6 +5,43 @@ from pathlib import Path
 import argparse
 import time
 import numpy as np
+import torch
+import torchvision
+from PIL import Image
+
+save_imgs = True
+
+
+totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+                                                    #  torchvision.transforms.Resize((512, 2048))])
+
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, root_path, mode, transform = None):
+        img_str = f"images/{mode}/*.jpg"
+        mask_str = f"annotations/{mode}"
+
+        self.image_data = glob.glob(root_path +"/*.jpg"+ img_str)
+        self.mask_root = root_path + "/" +mask_str
+        if(transform):
+            self.transform = transform
+        else: 
+            self.transform = totensor_transform
+
+    def __len__(self):
+        return len(self.image_data)
+
+    def __getitem__(self, idx): 
+        img_path = self.image_data[idx]
+        mask_path = self.mask_root+"/"+Path(img_path).stem+".png"
+
+        img = np.array(Image.open(img_path))
+        img = self.transform(img)
+        mask = np.array(Image.open(mask_path))
+        """if(self.transform):
+            image = self.transform(img)"""
+
+        return img, mask
+        
 
 
 def filter_random(augmentations, path, num_augmentations):
@@ -17,6 +54,45 @@ def filter_random(augmentations, path, num_augmentations):
     picked_augmentations = np.random.choice(augmentations, np.min([num_augmentations, len(augmentations)])).tolist()
     filtered_augmentations.extend(picked_augmentations)
     return filtered_augmentations
+
+def filter_uncertainty(augmentations, path, num_augmentations, model, num_samples = 5):
+    # add initial image (no augmentation)
+    filtered_augmentations = [Path(path).stem+".jpg"]
+    # remove real image from augmentations list
+    augmentations.remove(Path(path).stem+".jpg")
+    root = Path(path).parent
+    uncertainties = []
+    for augmentation in augmentations: 
+        img = np.array(Image.open(root / augmentation))
+        img = totensor_transform(img).cuda().float()[None]
+        outs = []
+        for i in range(num_samples):
+            out = model(img).detach().cpu()
+            outs.append(out)            
+        mean_uncertainty = np.mean(np.std(outs, axis = (2,3)))
+        uncertainties.append(mean_uncertainty)
+    augmentations = [x for _, x in sorted(zip(uncertainties, augmentations), reverse=True)]
+
+    if(save_imgs):
+        # visualize
+        fig,axis = plt.subplots(1,1+len(augmentations), figsize = ((1+len(augmentations))*5,5))
+        img = np.array(Image.open(path))
+
+        axis[0].imshow(img)
+        for idx, (augmentation, uncertainty) in enumerate(zip(augmentations, sorted(uncertainties, reverse=True))): 
+            img = np.array(Image.open(root / augmentation))
+            axis[idx+1].imshow(img)
+            axis[idx+1].set_title(uncertainty)
+        for ax in axis: 
+            ax.set_axis_off()
+        plt.savefig("./Debug/"+Path(path).stem+".jpg")
+        plt.close()
+
+    # pick augmentations 
+    picked_augmentations = augmentations[:num_augmentations]
+    filtered_augmentations.extend(picked_augmentations)
+    return filtered_augmentations
+
 
 def filter_synthetic_only(augmentations, num_augmentations):
     # remove real image from pool
@@ -45,8 +121,12 @@ if __name__ == "__main__":
 
 
     parser.add_argument('--name', type = str, default="default")
-    parser.add_argument('--filter_by', type = str, choices=["random", "synthetic_only", "real_only"])
-    parser.add_argument('--num_augmentations', type = int, default=4)
+    parser.add_argument('--filter_by', type = str, choices=["random", "synthetic_only", "real_only", "uncertainty"])
+    parser.add_argument('--num_augmentations', type = int, default=1)
+    parser.add_argument('--num_uncertainty_samples', type = int, default=5)
+    parser.add_argument('--model_path', type = str, default="./SegmentationModel/train_model_scripted.pt")
+
+
 
 
     args = parser.parse_args()
@@ -61,6 +141,9 @@ if __name__ == "__main__":
     image_paths = glob(args.data_path+"/"+args.images_folder+"*_000.jpg")
     lines = []
 
+    if(args.filter_by == "uncertainty"):
+        segmentation_model = torch.jit.load(args.model_path).cuda()
+
     for path in image_paths: 
         p = Path(path)
         n = p.stem
@@ -73,6 +156,8 @@ if __name__ == "__main__":
             augmentations = filter_synthetic_only(augmentations, args.num_augmentations)
         elif(args.filter_by == "real_only"):
             augmentations = filter_real_only(path)
+        elif(args.filter_by == "uncertainty"):
+            augmentations = filter_uncertainty(augmentations, path, args.num_augmentations, segmentation_model, args.num_uncertainty_samples)
         lines.extend(augmentations)
 
     with open(save_path, 'w') as f:
