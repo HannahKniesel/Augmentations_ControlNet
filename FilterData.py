@@ -202,7 +202,7 @@ if __name__ == "__main__":
     print(f"Save as: {save_path}")
 
     # get all real images (no augmentations)
-    image_paths = glob(args.data_path+"/"+args.images_folder+"*_000.jpg")
+    image_paths = glob(args.data_path+"/"+args.images_folder+"*_0000.jpg")
     lines = []
 
     if((args.filter_by == "uncertainty") or (args.filter_by == "uncertainty_gt")):
