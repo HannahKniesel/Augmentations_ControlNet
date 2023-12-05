@@ -171,7 +171,7 @@ if __name__ == "__main__":
 
         # save init image 
         name = Path(path).stem.split(".")
-        name[0] = name[0] + "_" + str(0).zfill(3)
+        name[0] = name[0] + "_" + str(0).zfill(4)
         name = (".").join(name)
         image_pil = Image.fromarray(image)
         image_pil.save(save_path+images_folder+name+".jpg")
@@ -211,7 +211,7 @@ if __name__ == "__main__":
 
             # save augmented image 
             name = Path(path).stem.split(".")
-            name[0] = name[0] + "_" + str(i+1).zfill(3)
+            name[0] = name[0] + "_" + str(i+1).zfill(4)
             name = (".").join(name)
             image.save(save_path+images_folder+name+".jpg")
 
