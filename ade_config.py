@@ -1,10 +1,13 @@
 data_path = "./data/ade/ADEChallengeData2016/"
 save_path = "./data/ade_augmented/" # save aumentations to + filter this data
 
+vis_folder = "/visualization/"
 images_folder = "/images/training/"
 annotations_folder = "/annotations/training/"
 
 annotations_format = ".png"
+images_format = ".jpg"
+
 
 
 palette=[[0,0,0],[120, 120, 120], [180, 120, 120], [6, 230, 230], [80, 50, 50],

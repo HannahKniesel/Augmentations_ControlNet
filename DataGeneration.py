@@ -7,80 +7,102 @@ from PIL import Image
 from glob import glob
 import matplotlib.pyplot as plt
 from transformers import AutoProcessor, Blip2ForConditionalGeneration, BlipProcessor, BlipForQuestionAnswering, pipeline, Blip2Processor, Blip2ForConditionalGeneration
+from transformers import BlipProcessor, Blip2ForConditionalGeneration
 import os
 from pathlib import Path
 import argparse
 import time
 from datetime import timedelta
 import shutil
+import torchvision
+from torch.utils.data import Dataset as TorchDataset
+from torch.utils.data import DataLoader
+from Utils import *
+
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def save_example(image, annotation, canny_image, augmentations, prompts, annotated_classes, folder, idx):
-    fig,axs = plt.subplots(1,3+len(augmentations), figsize=(10+(5*len(augmentations)),15))
-    axs[0].imshow(image)
-    axs[1].imshow(annotation)
-    axs[1].set_title(("\n").join(annotated_classes))
-    axs[2].imshow(canny_image)
-    for j, (augmented_image, prompt) in enumerate(zip(augmentations, prompts)):
-        axs[j+3].imshow(augmented_image)
-    axs[3].set_title(prompt)
 
-    for ax in axs:
-        ax.set_axis_off()
+def get_name(path, idx):
+    name = Path(path).stem.split(".")
+    name[0] = name[0] + "_" + str(idx).zfill(4)
+    name = (".").join(name)
+    return name
 
-    str_idx = str(idx).zfill(6)
-    save_dir = folder+"/"
-    os.makedirs(save_dir, exist_ok = True)
-    plt.tight_layout()
-    plt.savefig(save_dir+str_idx+".jpg")
+def save_augmentations_with_gt(aug_annotations, augmentations, path):
+    for idx, (annotation, augmentation) in enumerate(zip(aug_annotations, augmentations)):
+        name = get_name(path, idx+1)
+        annotation.save(save_path+annotations_folder+name+annotations_format)
+        augmentation.save(save_path+images_folder+name+images_format)
+    return
+
+def visualize(aug_annotations, augmentations, init_image, init_annotation, prompt, name):
+    fig, axis = plt.subplots(3, len(augmentations)+1, figsize = ((len(augmentations)+1)*5, 3*5))
+    plt.suptitle(prompt)
+    axis[0,0].imshow(init_image)
+    axis[1,0].imshow(init_annotation)
+    axis[2,0].imshow(init_image)
+    axis[2,0].imshow(init_annotation, alpha = 0.5)
+    axis[2,0].set_xlabel(f"Image res: {init_image.size()} | GT res: {init_annotation.size()}")
+
+    for i, (annotation, augmentation) in enumerate(zip(aug_annotations, augmentations)):
+        annotation = index2color_annotation(np.array(annotation), palette)
+        axis[0,i+1].imshow(augmentation)
+        axis[1,i+1].imshow(annotation)
+        axis[2,i+1].imshow(augmentation)
+        axis[2,i+1].imshow(annotation, alpha = 0.5)
+        axis[2,i+1].set_xlabel(f"Image res: {augmentation.size} | GT res: {annotation.shape}")
+    plt.savefig(save_path+vis_folder+name)
     plt.close()
-    return 
-
-def image2text_local(model, image, seed = 42):
-    # image to text with vit-gpt2
-    torch.manual_seed(seed)
-    if(type(image) != Image.Image):
-        image = Image.fromarray(image)
-    input_text = model(image)
-    input_text = input_text[0]['generated_text']
-    return input_text
-
-def image2text(model, processor, image, prompt, seed = 42):
-    # image to text with vit-gpt2
-    torch.manual_seed(seed)
-    if(type(image) != Image.Image):
-        print(image.shape)
-        if(image.shape[0] <=3): 
-            image = image.transpose(1,2,0)
-        image = Image.fromarray(image)
-    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device=device, dtype=torch.float16)
-    generated_ids = model.generate(**inputs)
-    input_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
-    return input_text
-
-def augment_image_controlnet(controlnet_pipe, canny_image, prompt, seed = 42):
-    generator = torch.manual_seed(seed)
-    images = controlnet_pipe(prompt, num_inference_steps=20, generator=generator, image=canny_image).images
-    image = images[0]
-    return image
 
 
-def get_segmentation(annotation, palette):
-    condition_image = np.zeros((annotation.shape[0], annotation.shape[1], 3), dtype=np.uint8) # height, width, 3
-    for label, color in enumerate(palette):
-        condition_image[annotation == label, :] = color
+class Ade20kDataset(TorchDataset):
+    def __init__(self, start_idx, end_idx, seed = 42):
 
-    condition_image = condition_image.astype(np.uint8) 
-    condition_image = Image.fromarray(condition_image)
-    return condition_image
+        data_paths = sorted(glob(data_path+images_folder+"*.jpg"))
+        if((start_idx > 0) and (end_idx >= 0)):
+            data_paths = data_paths[start_idx:end_idx]
+            start_idx = start_idx
+        elif(end_idx >= 0):
+            data_paths = data_paths[:end_idx]
+        elif(start_idx > 0):
+            data_paths = data_paths[start_idx:]
+            start_idx = start_idx
+        self.annotations_dir = data_path+annotations_folder
+        self.data_paths = data_paths
+        self.seed = seed
+        self.transform = totensor_transform
 
-def get_canny(init_image, canny_x = 100, canny_y = 250):
-    canny_image = cv2.Canny(init_image, canny_x, canny_y)
-    canny_image = canny_image[:,:,None]
-    canny_image = np.concatenate([canny_image,canny_image,canny_image], axis = 2)
-    canny_image = Image.fromarray(canny_image)
-    return canny_image
+    def __len__(self):
+        return len(self.data_paths)
 
+    def __getitem__(self, idx): 
+        path = self.data_paths[idx]
+        # open image
+        init_image = (Image.open(path))
+        if(args.local):
+            prompt = image2text_gpt2(model, init_image, self.seed)
+        else: 
+            prompt = image2text_blip2(model, processor, init_image, self.seed)
+        init_image = np.array(init_image)
+        if(len(init_image.shape) != 3):
+            init_image = np.stack([init_image,init_image,init_image], axis = 0)
+        
+        # open mask
+        annotation_path = self.annotations_dir+Path(path).stem+annotations_format
+        annotation = np.array(Image.open(annotation_path))
+        condition = self.transform(index2color_annotation(annotation, palette))
+        
+        # copy annotation and init image
+        name = get_name(path, 0)
+        shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
+        shutil.copy(path, save_path+images_folder+name+images_format)
+
+
+
+        # TODO return prompt
+
+        return init_image, condition, annotation, prompt, path
 
 
 if __name__ == "__main__":
@@ -93,140 +115,99 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Augmentations')
 
     # General Parameters
-    parser.add_argument('--prompt_definition', type = str, default="img2text", choices=["vqa", "img2text", "annotations"])
-    parser.add_argument('--dataset', type = str, default="cocostuff10k", choices = ["ade", "cocostuff10k"])
-    parser.add_argument('--condition', type = str, default="canny", choices = ["canny", "segmentation"])
+    # parser.add_argument('--prompt_definition', type = str, default="img2text", choices=["vqa", "img2text", "annotations"])
+    # parser.add_argument('--dataset', type = str, default="ade", choices = ["ade", "cocostuff10k"])
+    parser.add_argument('--experiment_name', type = str, default="")
     parser.add_argument('--num_augmentations', type = int, default=4)
+    parser.add_argument('--seed', type = int, default=4)
     parser.add_argument('--local', action='store_true')
+    parser.add_argument('--batch_size', type = int, default=4)
+    parser.add_argument('--vis_every', type = int, default=1)
 
-
-    parser.add_argument('--start_idx', type = int, default=-1)
+    parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
 
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    if(args.dataset == "cocotuff10k"):
-        from coco_config import *
-    elif(args.dataset == "ade"):
-        from ade_config import *
+    # import ade config
+    from ade_config import *
 
     start_time = time.time()
 
-    save_path = save_path+"/"+args.condition+"_"+args.prompt_definition
+    # save_path = save_path+"/"+args.condition+"_"+args.prompt_definition
+    save_path = save_path+"/"+args.experiment_name+"/"
     print(f"Save to: {save_path}")
     
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(save_path+images_folder, exist_ok=True)
     os.makedirs(save_path+annotations_folder, exist_ok=True)
-
-    data_paths = glob(data_path+images_folder+"*.jpg")
-    start_idx = 0
-    if((args.start_idx >= 0) and (args.end_idx >= 0)):
-        data_paths = data_paths[args.start_idx:args.end_idx]
-        start_idx = args.start_idx
-    elif(args.end_idx >= 0):
-        data_paths = data_paths[:args.end_idx]
-    elif(args.start_idx >= 0):
-        data_paths = data_paths[args.start_idx:]
-        start_idx = args.start_idx
+    os.makedirs(save_path+vis_folder, exist_ok=True)
 
 
-    annotations_dir = data_path+annotations_folder
+   
 
-    # load models
+    # load img2text models
     if(args.local):
         model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
     else:
-        processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-        model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
+        processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
+        model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", device_map="auto")
+
+        # processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
+        # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
 
 
-    if(args.condition =="canny"):
-        controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny", torch_dtype=torch.float16)
-    elif(args.condition == "segmentation"):
-        controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-seg", torch_dtype=torch.float16)
+    # load controlnet
+    controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-seg", torch_dtype=torch.float16)
     controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
-    #controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
 
-    for img_idx, path in enumerate(data_paths): 
-        print(f"Image {img_idx+start_idx}/{len(data_paths)+start_idx}")
-        init_image = np.array(Image.open(path))
-    
-        annotation_path = annotations_dir+Path(path).stem+".png"
-        annotation = np.array(Image.open(annotation_path))
-        annotated_classes = [classes[x] for x in np.unique(annotation) if(classes[x] != 'bg')]
 
-        if(args.condition == "segmentation"):
-            condition_image = get_segmentation(annotation, palette)
-        elif(args.condition == "canny"):
-            condition_image = get_canny(init_image) 
+    # get data
+    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.seed)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
-        augmentations = [init_image.copy()]
-        prompts = []
-        image = init_image.copy()
+    for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
+        starttime_img = time.time()
 
-        # save init image 
-        name = Path(path).stem.split(".")
-        name[0] = name[0] + "_" + str(0).zfill(4)
-        name = (".").join(name)
-        image_pil = Image.fromarray(image)
-        image_pil.save(save_path+images_folder+name+".jpg")
+        print(prompt)
 
-        # copy annotation for this image
-        shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
+        # get augmentations
+        augmentations = []
+        aug_annotations = []
+        while(len(augmentations)<args.num_augmentations):
+            curr_batch_size = np.min((args.batch_size, (args.num_augmentations - len(augmentations))))
+            # image = np.zeros((3,3))
+            # nsfw = 0
+            augmented = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+            augmentations.extend(augmented)
 
-        if(len(image.shape) != 3):
-            image = np.stack([image,image,image], axis = 0)
-        for i in range(args.num_augmentations):
-            seed = torch.randint(high = 10000000, size = (1,))
-            if(args.prompt_definition == "annotations"):
-                anno_str = ", ".join(annotated_classes)
-                prompt = "An image of "+anno_str
-            else:
-                if(args.prompt_definition == "vqa"):
-                    prompt = "What is in the image?"
-                elif(args.prompt_definition == "img2text"):
-                    prompt = None
-                elif(args.prompt_definition == "vqa_annotations"):
-                    anno_str = ", ".join(annotated_classes)
-                    prompt = "Describe the image using some of the following words: "+str(anno_str)
-                    
-                if(args.local): 
-                    prompt = image2text_local(model, image, seed)
-                else: 
-                    prompt = image2text(model, processor, image, prompt, seed)
+            transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
+            aug_annotation = transform(annotation[0])
+            aug_annotations.extend([aug_annotation]*len(augmented))
+            # image = transform(image)
+            # nsfw += 1
 
-            if(prompt is not None):
-                prompt = prompt+", realistic looking, high-quality, extremely detailed, 4K, HQ"
-            
+        # save augmentations
+        save_augmentations_with_gt(aug_annotations, augmentations, path[0])
 
-            image = augment_image_controlnet(controlnet_pipe, condition_image, prompt, seed)
-            augmentations.append(image)
-            prompts.append(prompt+"\n Seed = "+str(float(seed)))
-
-
-            # save augmented image 
-            name = Path(path).stem.split(".")
-            name[0] = name[0] + "_" + str(i+1).zfill(4)
-            name = (".").join(name)
-            image.save(save_path+images_folder+name+".jpg")
-
-            # copy annotation for this image
-            shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
-
-        save_example(init_image, annotation, condition_image, augmentations, prompts, annotated_classes, save_path, img_idx+start_idx)
+        if((img_idx %args.vis_every) == 0): 
+            visualize(aug_annotations, augmentations, init_img[0], condition[0].permute(1,2,0), prompt, Path(path[0]).stem)
+        
+        endtime_img = time.time()
+        elapsedtime_img = endtime_img - starttime_img
+        remaining_time = elapsedtime_img*(len(dataset)-img_idx)
+        elapsedtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(elapsedtime_img))
+        remainingtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(remaining_time))
+        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Time for image = {elapsedtime_img_str} | Remaining time = {remainingtime_img_str}")
 
     end_time = time.time()
-    elapsed_time = end_time - start_time
-    elapsed_time_str = time.strftime("%Hh%Mm%Ss", time.gmtime(elapsed_time))
-    print(f"Augmented {len(data_paths)} images with {args.num_augmentations} augmentations in {elapsed_time_str}")
-    time_per_augmentation = elapsed_time/(len(data_paths)*args.num_augmentations)
-    time_per_augmentation_str = time.strftime("%Hh%Mm%Ss", time.gmtime(time_per_augmentation))
-    print(f"Time per augmentation = {time_per_augmentation_str}")
+    elapsedtime = end_time - start_time
+    elapsedtime_str = str(timedelta(seconds=elapsedtime))
+    print(f"Time to generate {args.num_augmentations} augmentations for {len(dataset)} images was {elapsedtime_str}")
 
 
     
