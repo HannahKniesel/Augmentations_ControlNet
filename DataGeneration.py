@@ -86,9 +86,9 @@ class Ade20kPromptDataset(AbstractAde20k):
         
 
     def __getitem__(self, idx):
-        p = self.data_paths[idx]
-        if(args.local):
-            return self.data_paths[idx], self.aug_paths[idx]
+        # p = self.data_paths[idx]
+        # if(args.local):
+        return self.data_paths[idx], self.aug_paths[idx]
 
         # image = Image.open(p)
         # image = totensor_transform(image)

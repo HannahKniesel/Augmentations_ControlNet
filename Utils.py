@@ -83,7 +83,12 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
 
 # TODO
 def augmentandoptimize_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = 42, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):
-    generator = torch.manual_seed(seed)
+    if(seed):
+        generator = torch.manual_seed(seed)
+    else: 
+        generator = None
+
+    latents = torch.rand.normal(0.0, 0.1)
     negative_prompt = 'low quality, bad quality, sketches'
     images = controlnet_pipe(prompt+", realistic looking, high-quality, extremely detailed, 4K, HQ", 
                              negative_prompt=negative_prompt, 
