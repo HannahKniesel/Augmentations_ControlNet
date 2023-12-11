@@ -9,6 +9,16 @@ totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTe
 topil_transform = torchvision.transforms.ToPILImage()
 
 
+def write_txt(file, content):
+    with open(file, 'w') as f:
+        f.write(content)
+
+def read_txt(file):
+    with open(file) as f:
+        lines = f.readlines()
+    return lines
+
+
 # idx_annotation ... np.array with shape W,H indices as 
 def index2color_annotation(idx_annotation, palette):
     color_annotation = np.zeros((idx_annotation.shape[0], idx_annotation.shape[1], 3), dtype=np.uint8) # height, width, 3
@@ -30,19 +40,22 @@ def color2index_annotation(color_annotation, palette):
 # image to text generation
 def image2text_gpt2(model, pil_image, seed = 42):
     # image to text with vit-gpt2
-    torch.manual_seed(seed)
+    # torch.manual_seed(seed)
     input_text = model(pil_image)
-    input_text = input_text[0]['generated_text']
-    return input_text
+    prompts = [t[0]['generated_text'] for t in input_text]
+    return prompts
 
 def image2text_blip2(model, processor, pil_image, seed = 42):
     # image to text with vit-gpt2
-    torch.manual_seed(seed)
+    # torch.manual_seed(seed)
     prompt = "Question: What are shown in the photo? Answer:"#None
-    inputs = processor(pil_image, prompt, return_tensors="pt").to(device)
+    inputs = processor(pil_image, prompt, return_tensors="pt").to(device, torch.float16)
+    # inputs = processor(pil_image, prompt, return_tensors="pt").to(device)
     out = model.generate(**inputs)
-    input_text = (processor.decode(out[0], skip_special_tokens=True))
-    return input_text
+    prompts = [processor.decode(t[0], skip_special_tokens=True) for t in out]
+
+    # input_text = (processor.decode(out[0], skip_special_tokens=True))
+    return prompts
 
 
 def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = None, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):

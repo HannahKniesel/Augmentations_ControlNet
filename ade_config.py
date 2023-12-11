@@ -4,9 +4,12 @@ save_path = "./data/ade_augmented/" # save aumentations to + filter this data
 vis_folder = "/visualization/"
 images_folder = "/images/training/"
 annotations_folder = "/annotations/training/"
+prompts_folder = "/prompts/training/"
+
 
 annotations_format = ".png"
 images_format = ".jpg"
+prompts_format = ".txt"
 
 
 

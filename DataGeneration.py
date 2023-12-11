@@ -18,6 +18,7 @@ import torchvision
 from torch.utils.data import Dataset as TorchDataset
 from torch.utils.data import DataLoader
 from Utils import *
+from tqdm import tqdm
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -55,10 +56,8 @@ def visualize(aug_annotations, augmentations, init_image, init_annotation, promp
     plt.savefig(save_path+vis_folder+name)
     plt.close()
 
-
-class Ade20kDataset(TorchDataset):
+class AbstractAde20k(TorchDataset):
     def __init__(self, start_idx, end_idx, seed = 42):
-
         data_paths = sorted(glob(data_path+images_folder+"*.jpg"))
         if((start_idx > 0) and (end_idx >= 0)):
             data_paths = data_paths[start_idx:end_idx]
@@ -69,6 +68,7 @@ class Ade20kDataset(TorchDataset):
             data_paths = data_paths[start_idx:]
             start_idx = start_idx
         self.annotations_dir = data_path+annotations_folder
+        self.prompts_dir = data_path+prompts_folder
         self.data_paths = data_paths
         self.seed = seed
         self.transform = totensor_transform
@@ -76,17 +76,31 @@ class Ade20kDataset(TorchDataset):
     def __len__(self):
         return len(self.data_paths)
 
+class Ade20kPromptDataset(AbstractAde20k):
+    def __init__(self, start_idx, end_idx, num_captions_per_image, seed = 42):
+        super().__init__(start_idx, end_idx, seed)
+        res = [ele for ele in self.data_paths for i in range(num_captions_per_image)]
+        self.aug_paths = [get_name(ele, i) for ele in self.data_paths for i in range(num_captions_per_image)]
+        self.data_paths = res
+        
+
+    def __getitem__(self, idx):
+        return self.data_paths[idx], self.aug_paths[idx]
+
+class Ade20kDataset(AbstractAde20k):
+    def __init__(self, start_idx, end_idx, seed = 42):
+        super().__init__(start_idx, end_idx, seed)
+
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
         # open image
         init_image = (Image.open(path))
-        if(args.local):
-            prompt = image2text_gpt2(model, init_image, self.seed)
-        else: 
-            prompt = image2text_blip2(model, processor, init_image, self.seed)
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
             init_image = np.stack([init_image,init_image,init_image], axis = 0)
+        
+        # open prompt
+        prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+prompts_format)[0]
         
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+annotations_format
@@ -147,17 +161,41 @@ if __name__ == "__main__":
 
 
    
+    # check if prompts exist, if not generate prompts
+    if(not Path(data_path+prompts_folder).is_dir()): 
+        os.makedirs(data_path+prompts_folder, exist_ok=True)
+        # load img2text models
+        if(args.local):
+            model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
 
-    # load img2text models
-    if(args.local):
-        model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
-    else:
-        processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
-        model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", device_map="auto")
+        else:
+            processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
+            model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", torch_dtype=torch.float16, device_map="auto", load_in_8bit=True,)
+            # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", device_map="auto")
 
-        # processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-        # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
+            # processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
+            # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
+        
+        # dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, args.num_augmentations, args.seed)
+        dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, 1, args.seed)
+        dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
+        for paths, aug_paths in tqdm(dataloader, desc="Generating prompts"): 
+            if(args.local):
+                prompts = image2text_gpt2(model, list(paths), args.seed)
+            else: 
+                prompts = image2text_blip2(model, processor, list(paths), args.seed)
+            # print(paths)
+            # print(aug_paths)
+
+            for p, prompt in zip(aug_paths, prompts):
+                write_txt(data_path+prompts_folder+p+prompts_format, prompt)
+                
+
+    # copy prompts to new data folder 
+    os.makedirs(save_path+prompts_folder, exist_ok=True)
+    for filename in glob(os.path.join(data_path+prompts_folder, '*'+prompts_format)):
+        shutil.copy(filename, save_path+prompts_folder)
 
     # load controlnet
     controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-seg", torch_dtype=torch.float16)
