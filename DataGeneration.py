@@ -232,7 +232,7 @@ if __name__ == "__main__":
         # save augmentations
         save_augmentations_with_gt(aug_annotations, augmentations, path[0])
 
-        if((img_idx %args.vis_every) == 0): 
+        if((args.vis_every >0 ) and ((img_idx %args.vis_every) == 0)): 
             visualize(aug_annotations, augmentations, init_img[0], condition[0].permute(1,2,0), prompt, Path(path[0]).stem)
         
         endtime_img = time.time()
