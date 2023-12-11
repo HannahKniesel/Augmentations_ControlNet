@@ -145,6 +145,7 @@ if __name__ == "__main__":
     parser.add_argument('--local', action='store_true')
     parser.add_argument('--batch_size', type = int, default=4)
     parser.add_argument('--vis_every', type = int, default=1)
+    parser.add_argument('--optimize', action='store_true')
 
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
@@ -172,7 +173,6 @@ if __name__ == "__main__":
     # check if prompts exist, if not generate prompts
     if(not Path(data_path+prompts_folder).is_dir()): 
         os.makedirs(data_path+prompts_folder, exist_ok=True)
-        # load img2text models
         if(args.local):
             model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
 
@@ -180,7 +180,6 @@ if __name__ == "__main__":
             processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
             model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", torch_dtype=torch.float16, device_map="auto", load_in_8bit=True,)
             # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", device_map="auto")
-
             # processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
             # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
         
@@ -193,9 +192,6 @@ if __name__ == "__main__":
                 prompts = image2text_gpt2(model, list(paths), args.seed)
             else: 
                 prompts = image2text_blip2(model, processor, list(paths), args.seed)
-            # print(paths)
-            # print(aug_paths)
-
             for p, prompt in zip(aug_paths, prompts):
                 write_txt(data_path+prompts_folder+p+prompts_format, prompt)
                 
@@ -228,7 +224,10 @@ if __name__ == "__main__":
             curr_batch_size = np.min((args.batch_size, (args.num_augmentations - len(augmentations))))
             # image = np.zeros((3,3))
             # nsfw = 0
-            augmented = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+            if(args.optimize):
+                augmented = augmentandoptimize_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+            else: 
+                augmented = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
             augmentations.extend(augmented)
 
             transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])

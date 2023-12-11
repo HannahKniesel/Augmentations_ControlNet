@@ -82,13 +82,17 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
     return images
 
 # TODO
+# Issue: cant backpropagate through controlnet pipe
 def augmentandoptimize_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = 42, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):
     if(seed):
         generator = torch.manual_seed(seed)
     else: 
         generator = None
+    import pdb 
+    pdb.set_trace()
+    latents = controlnet_pipe.vae.encode(condition_image.type(torch.float16).cuda()).latent_dist.sample()
+    images = controlnet_pipe(prompt, image = condition_image, latents = latents).images
 
-    latents = torch.rand.normal(0.0, 0.1)
     negative_prompt = 'low quality, bad quality, sketches'
     images = controlnet_pipe(prompt+", realistic looking, high-quality, extremely detailed, 4K, HQ", 
                              negative_prompt=negative_prompt, 
