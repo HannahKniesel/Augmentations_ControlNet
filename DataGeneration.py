@@ -83,9 +83,17 @@ class Ade20kPromptDataset(AbstractAde20k):
         self.aug_paths = [get_name(ele, i) for ele in self.data_paths for i in range(num_captions_per_image)]
         self.data_paths = res
         
+        
 
     def __getitem__(self, idx):
-        return self.data_paths[idx], self.aug_paths[idx]
+        p = self.data_paths[idx]
+        if(args.local):
+            return self.data_paths[idx], self.aug_paths[idx]
+
+        image = Image.open(p)
+        image = totensor_transform(image)
+        return image, self.aug_paths[idx]
+
 
 class Ade20kDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, seed = 42):
