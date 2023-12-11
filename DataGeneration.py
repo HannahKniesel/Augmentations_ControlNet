@@ -90,9 +90,9 @@ class Ade20kPromptDataset(AbstractAde20k):
         if(args.local):
             return self.data_paths[idx], self.aug_paths[idx]
 
-        image = Image.open(p)
-        image = totensor_transform(image)
-        return image, self.aug_paths[idx]
+        # image = Image.open(p)
+        # image = totensor_transform(image)
+        # return image, self.aug_paths[idx]
 
 
 class Ade20kDataset(AbstractAde20k):

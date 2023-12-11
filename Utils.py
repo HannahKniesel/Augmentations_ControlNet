@@ -38,23 +38,26 @@ def color2index_annotation(color_annotation, palette):
     return color_annotation
 
 # image to text generation
-def image2text_gpt2(model, pil_image, seed = 42):
+def image2text_gpt2(model, paths, seed = 42):
     # image to text with vit-gpt2
     # torch.manual_seed(seed)
-    input_text = model(pil_image)
+    input_text = model(paths)
     prompts = [t[0]['generated_text'] for t in input_text]
     return prompts
 
-def image2text_blip2(model, processor, pil_image, seed = 42):
+def image2text_blip2(model, processor, paths, seed = 42):
     # image to text with vit-gpt2
     # torch.manual_seed(seed)
-    prompt = "Question: What are shown in the photo? Answer:"#None
-    inputs = processor(pil_image, prompt, return_tensors="pt").to(device, torch.float16)
-    # inputs = processor(pil_image, prompt, return_tensors="pt").to(device)
-    out = model.generate(**inputs)
-    prompts = [processor.decode(t[0], skip_special_tokens=True) for t in out]
+    prompts = []
+    for path in paths: 
+        pil_image = Image.open(path)
+        prompt = "Question: What are shown in the photo? Answer:"#None
+        inputs = processor(pil_image, prompt, return_tensors="pt").to(device, torch.float16)
+        # inputs = processor(pil_image, prompt, return_tensors="pt").to(device)
+        out = model.generate(**inputs)
 
-    # input_text = (processor.decode(out[0], skip_special_tokens=True))
+        input_text = (processor.decode(out[0], skip_special_tokens=True))
+        prompts.append(input_text)
     return prompts
 
 
