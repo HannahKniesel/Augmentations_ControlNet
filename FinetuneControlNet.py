@@ -1063,13 +1063,7 @@ def main(args):
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
                 
                 # TODO adapt loss to uncertainty loss (and uncertainty GT loss)
-                import matplotlib.pyplot as plt 
                 print(model_pred.shape)
-                plt.figure()
-                plt.imshow(model_pred[0].detach().cpu().permute(1,2,0))
-
-                wandb.log({"model_pred": wandb.Image(plt)})
-                plt.close()
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
                 accelerator.backward(loss)
