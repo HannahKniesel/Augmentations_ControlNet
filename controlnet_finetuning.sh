@@ -1,21 +1,29 @@
-export MODEL_DIR="runwayml/stable-diffusion-v1-5"
+export WANDB_API_KEY="f9ac711f43521f970835a198be72917607413691"
+wandb init
+wandb login
+
+export SD_DIR="runwayml/stable-diffusion-v1-5"
+export CONTROLNET_DIR="lllyasviel/sd-controlnet-seg"
 export OUTPUT_DIR="controlnet_model_out"
 
+
 accelerate launch FinetuneControlNet.py \
- --pretrained_model_name_or_path=$MODEL_DIR \
+ --pretrained_model_name_or_path=$SD_DIR \
+ --controlnet_model_name_or_path=$CONTROLNET_DIR \
  --output_dir=$OUTPUT_DIR \
  --dataset_name=fusing/fill50k \
  --resolution=512 \
  --learning_rate=1e-5 \
- --validation_image "./conditioning_image_1.png" "./conditioning_image_2.png" \
- --validation_prompt "red circle with blue background" "cyan circle with brown floral background" \
+ --validation_image "./data/ade/ADEChallengeData2016/annotations/training/ADE_train_00000001.png" "./data/ade/ADEChallengeData2016/annotations/training/ADE_train_00020183.png" \
+ --validation_prompt "a fountain" "a bunk bed, a window, and a woman" \
  --train_batch_size=1 \
  --gradient_accumulation_steps=4 \
  --gradient_checkpointing \
  --use_8bit_adam \
  --enable_xformers_memory_efficient_attention \
  --set_grads_to_none \
-#  --mixed_precision="fp16"
+ --mixed_precision="fp16" \
+ --report_to wandb 
 
 
 # accelerate launch train_controlnet.py \
