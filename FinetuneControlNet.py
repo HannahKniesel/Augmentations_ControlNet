@@ -1129,7 +1129,6 @@ def main(args):
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
                 
                 # TODO adapt loss to uncertainty loss (and uncertainty GT loss)
-                print(model_pred.shape)
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
                 accelerator.backward(loss)
