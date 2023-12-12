@@ -623,7 +623,9 @@ def make_train_dataset(args, tokenizer, accelerator):
     condition_image = sorted(glob.glob(data_path+annotations_folder+"/*"+annotations_format))
     text = glob.glob(data_path+prompts_folder+"/*"+prompts_format)
     # res = [read_txt(ele)[0] for ele in text for i in range(10+1)]
-    dataset = Dataset.from_dict({"image": images, "conditioning_image": condition_image, "text": text}, split = "train").cast_column("image", datasets.features.image.Image()).cast_column("conditioning_image", datasets.features.image.Image())#.cast_column("text", get_text())
+    res = [read_txt(ele)[0] for ele in text]
+
+    dataset = Dataset.from_dict({"image": images, "conditioning_image": condition_image, "text": res}, split = "train").cast_column("image", datasets.features.image.Image()).cast_column("conditioning_image", datasets.features.image.Image())#.cast_column("text", get_text())
     # , split="train"
     # 6. Get the column names for input/target.
     if args.image_column is None:
