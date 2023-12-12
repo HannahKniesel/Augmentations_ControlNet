@@ -37,6 +37,8 @@ from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
+from ade_config import *
+
 
 import diffusers
 from diffusers import (
@@ -615,11 +617,11 @@ def make_train_dataset(args, tokenizer, accelerator):
     column_names = dataset["train"].column_names
     
     # TODO add own costum dataset --> todo: add as args parameter
-    images = sorted(glob.glob("./data/ade_augmented/images/training/*.jpg"))
-    condition_image = sorted(glob.glob("./data/ade_augmented/annotations/training/*.png"))
-    text = glob.glob("./data/ade/ADEChallengeData2016/prompts/training/*.txt")
-    res = [read_txt(ele)[0] for ele in text for i in range(10+1)]
-    dataset = Dataset.from_dict({"image": images, "conditioning_image": condition_image, "text": res}, split = "train").cast_column("image", datasets.features.image.Image()).cast_column("conditioning_image", datasets.features.image.Image())#.cast_column("text", get_text())
+    images = sorted(glob.glob(data_path+images_folder+"/*"+images_format))
+    condition_image = sorted(glob.glob(data_path+annotations_folder+"/*"+annotations_format))
+    text = glob.glob(data_path+prompts_folder+"/*"+prompts_format)
+    # res = [read_txt(ele)[0] for ele in text for i in range(10+1)]
+    dataset = Dataset.from_dict({"image": images, "conditioning_image": condition_image, "text": text}, split = "train").cast_column("image", datasets.features.image.Image()).cast_column("conditioning_image", datasets.features.image.Image())#.cast_column("text", get_text())
     # , split="train"
     # 6. Get the column names for input/target.
     if args.image_column is None:
@@ -688,7 +690,6 @@ def make_train_dataset(args, tokenizer, accelerator):
         ]
     )
 
-    # TODO 
     def preprocess_train(examples):
         images = [image.convert("RGB") for image in examples[image_column]]
         images = [image_transforms(image) for image in images]
@@ -888,7 +889,7 @@ def main(args):
         optimizer_class = torch.optim.AdamW
 
     # Optimizer creation
-    params_to_optimize = controlnet.parameters()
+    params_to_optimize = controlnet.parameters() # TODO include noise optimization
     optimizer = optimizer_class(
         params_to_optimize,
         lr=args.learning_rate,
@@ -1059,6 +1060,8 @@ def main(args):
                     target = noise
                 elif noise_scheduler.config.prediction_type == "v_prediction":
                     target = noise_scheduler.get_velocity(latents, noise, timesteps)
+                elif(noise_scheduler.config.prediction_type == "clean"): 
+                    target = batch["pixel_values"].to(dtype=weight_dtype)
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
                 
