@@ -39,8 +39,6 @@ from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
 from ade_config import *
 
-from pipeline_controlnet import StableDiffusionControlNetPipeline_WithGrads
-
 
 import diffusers
 from diffusers import (
@@ -1011,74 +1009,10 @@ def main(args):
         disable=not accelerator.is_local_main_process,
     )
 
-
-    controlnet = accelerator.unwrap_model(controlnet)
-    pipeline = StableDiffusionControlNetPipeline_WithGrads.from_pretrained(
-        args.pretrained_model_name_or_path,
-        vae=vae,
-        text_encoder=text_encoder,
-        tokenizer=tokenizer,
-        unet=unet,
-        controlnet=controlnet,
-        safety_checker=None,
-        revision=args.revision,
-        variant=args.variant,
-        torch_dtype=weight_dtype,
-    )
-    pipeline.scheduler = UniPCMultistepScheduler.from_config(pipeline.scheduler.config)
-    pipeline = pipeline.to(accelerator.device)
-    pipeline.set_progress_bar_config(disable=True)
-
-    if args.enable_xformers_memory_efficient_attention:
-        pipeline.enable_xformers_memory_efficient_attention()
-
-    if args.seed is None:
-        generator = None
-    else:
-        generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
-
     image_logs = None
     for epoch in range(first_epoch, args.num_train_epochs):
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(controlnet):
-                image = pipeline(batch["conditioning_pixel_values"].to(dtype=weight_dtype), batch["pixel_values"].to(dtype=weight_dtype), num_inference_steps=5, generator=generator)
-                import pdb 
-                pdb.set_trace()
-                """if len(args.validation_image) == len(args.validation_prompt):
-                    validation_images = args.validation_image
-                    validation_prompts = args.validation_prompt
-                elif len(args.validation_image) == 1:
-                    validation_images = args.validation_image * len(args.validation_prompt)
-                    validation_prompts = args.validation_prompt
-                elif len(args.validation_prompt) == 1:
-                    validation_images = args.validation_image
-                    validation_prompts = args.validation_prompt * len(args.validation_image)
-                else:
-                    raise ValueError(
-                        "number of `args.validation_image` and `args.validation_prompt` should be checked in `parse_args`"
-                    )
-
-                image_logs = []
-
-                for validation_prompt, validation_image in zip(validation_prompts, validation_images):
-                    validation_image = Image.open(validation_image).convert("RGB")
-
-                    images = []
-
-                    for _ in range(args.num_validation_images):
-                        with torch.autocast("cuda"):
-                            image = pipeline(
-                                validation_prompt, validation_image, num_inference_steps=20, generator=generator
-                            ).images[0]
-
-                        images.append(image)
-
-                    image_logs.append(
-                        {"validation_image": validation_image, "images": images, "validation_prompt": validation_prompt}
-                    )"""
-
-
-
                 # Convert images to latent space
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
                 latents = latents * vae.config.scaling_factor
@@ -1129,7 +1063,6 @@ def main(args):
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
                 
                 # TODO adapt loss to uncertainty loss (and uncertainty GT loss)
-                print(model_pred.shape)
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
                 accelerator.backward(loss)
