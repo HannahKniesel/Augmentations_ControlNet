@@ -206,7 +206,7 @@ if __name__ == "__main__":
     controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
-
+    controlnet_pipe.set_progress_bar_config(disable=True)
 
     # get data
     dataset = Ade20kDataset(args.start_idx, args.end_idx, args.seed)
