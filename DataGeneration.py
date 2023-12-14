@@ -211,7 +211,7 @@ if __name__ == "__main__":
     # get data
     dataset = Ade20kDataset(args.start_idx, args.end_idx, args.seed)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
-
+    mean_time_img = []
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
         starttime_img = time.time()
 
@@ -244,9 +244,11 @@ if __name__ == "__main__":
         
         endtime_img = time.time()
         elapsedtime_img = endtime_img - starttime_img
-        remaining_time = elapsedtime_img*(len(dataset)-img_idx)
+        mean_time_img.append(elapsedtime_img)
+        remaining_time = np.mean(mean_time_img)*(len(dataset)-img_idx)
         elapsedtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(elapsedtime_img))
-        remainingtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(remaining_time))
+        remainingtime_img_str = str(timedelta(seconds=remaining_time))
+        # remainingtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(remaining_time))
         print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Time for image = {elapsedtime_img_str} | Remaining time = {remainingtime_img_str}")
 
     end_time = time.time()

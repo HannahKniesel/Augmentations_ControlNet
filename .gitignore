@@ -173,3 +173,5 @@ data
 TestUncertainties
 SegmentationModel
 Debug
+diffusers/*
+wandb/*
