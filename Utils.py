@@ -72,7 +72,7 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
     curr_idx = 0
     augmentations = []
     while((nsfw_content > 0)):
-        output = controlnet_pipe(prompt, #+", realistic looking, high-quality, extremely detailed, 4K, HQ", 
+        output = controlnet_pipe(prompt +", realistic looking, high-quality, extremely detailed, 4K, HQ", #+"best quality, extremely detailed" # 
                                 negative_prompt=negative_prompt, 
                                 image=condition_image, 
                                 controlnet_conditioning_scale=controlnet_conditioning_scale, 
@@ -93,7 +93,6 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
                 print(f"WARNING:: augmentations contain {len(augmentations)-batch_size} nsfw")
             break
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
-    print(f"Length augmentations {len(augmentations)}")
     return augmentations
 
 # TODO
