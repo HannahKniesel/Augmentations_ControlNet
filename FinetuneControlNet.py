@@ -724,11 +724,12 @@ def collate_fn(examples):
     conditioning_pixel_values = conditioning_pixel_values.to(memory_format=torch.contiguous_format).float()
 
     input_ids = torch.stack([example["input_ids"] for example in examples])
-
+    prompts = [example["text"] for example in examples]
     return {
         "pixel_values": pixel_values,
         "conditioning_pixel_values": conditioning_pixel_values,
         "input_ids": input_ids,
+        #"text":prompts,
     }
 
 
@@ -1043,9 +1044,16 @@ def main(args):
     for epoch in range(first_epoch, args.num_train_epochs):
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(controlnet):
-                image = pipeline(batch["conditioning_pixel_values"].to(dtype=weight_dtype), batch["pixel_values"].to(dtype=weight_dtype), num_inference_steps=5, generator=generator)
+                # print(weight_type)
+                """with torch.autocast("cuda"):
+                    validation_image = Image.open("./data/ade/ADEChallengeData2016/annotations/training/ADE_train_00000001.png").convert("RGB")
+                    image = pipeline(batch["text"], validation_image, num_inference_steps=5, generator=generator).images
+                    
+                    #image = pipeline(batch["text"], batch["conditioning_pixel_values"].type(torch.float16), num_inference_steps=5, generator=generator).images
+                    print(image.shape)
+                    print(type(image))
                 import pdb 
-                pdb.set_trace()
+                pdb.set_trace()"""
                 """if len(args.validation_image) == len(args.validation_prompt):
                     validation_images = args.validation_image
                     validation_prompts = args.validation_prompt
@@ -1119,7 +1127,7 @@ def main(args):
                     ],
                     mid_block_additional_residual=mid_block_res_sample.to(dtype=weight_dtype),
                 ).sample
-
+		
                 # Get the target for loss depending on the prediction type
                 if noise_scheduler.config.prediction_type == "epsilon":
                     target = noise
@@ -1129,6 +1137,10 @@ def main(args):
                     target = batch["pixel_values"].to(dtype=weight_dtype)
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
+                    
+                latents = noise_scheduler.step(model_pred, timesteps.to('cuda'), noisy_latents, return_dict=False)[0]
+                print(latents.shape)
+
                 
                 # TODO adapt loss to uncertainty loss (and uncertainty GT loss)
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
