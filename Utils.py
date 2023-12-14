@@ -82,7 +82,7 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
     return images
 
 # TODO
-# Issue: cant backpropagate through controlnet pipe
+# Issue: cant backpropagate through controlnet pipe (torch.no_grad) --> look into DDPO implementation to backprob through forward pass of controlnet https://github.com/huggingface/trl/blob/main/trl/trainer/ddpo_trainer.py
 def augmentandoptimize_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = 42, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):
     if(seed):
         generator = torch.manual_seed(seed)
