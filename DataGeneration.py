@@ -249,7 +249,7 @@ if __name__ == "__main__":
         elapsedtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(elapsedtime_img))
         remainingtime_img_str = str(timedelta(seconds=remaining_time))
         # remainingtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(remaining_time))
-        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Time for image = {elapsedtime_img_str} | Remaining time = {remainingtime_img_str}")
+        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Time for image = {elapsedtime_img_str} | Average time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | Remaining time = {remainingtime_img_str}")
 
     end_time = time.time()
     elapsedtime = end_time - start_time

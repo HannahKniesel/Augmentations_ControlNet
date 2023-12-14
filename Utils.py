@@ -67,19 +67,34 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
     else: 
         generator = None
     negative_prompt = 'low quality, bad quality, sketches'
-    images = controlnet_pipe(prompt+", realistic looking, high-quality, extremely detailed, 4K, HQ", 
-                             negative_prompt=negative_prompt, 
-                             image=condition_image, 
-                             controlnet_conditioning_scale=controlnet_conditioning_scale, 
-                             guidance_scale = guidance_scale,
-                             num_inference_steps=40, 
-                             height = height, 
-                             width = width,
-                             num_images_per_prompt = batch_size,
-                             generator=generator).images
-    
+
+    nsfw_content = batch_size
+    curr_idx = 0
+    augmentations = []
+    while((nsfw_content > 0)):
+        output = controlnet_pipe(prompt, #+", realistic looking, high-quality, extremely detailed, 4K, HQ", 
+                                negative_prompt=negative_prompt, 
+                                image=condition_image, 
+                                controlnet_conditioning_scale=controlnet_conditioning_scale, 
+                                guidance_scale = guidance_scale,
+                                num_inference_steps=40, 
+                                height = height, 
+                                width = width,
+                                num_images_per_prompt = nsfw_content,
+                                generator=generator)
+        
+        images = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
+        augmentations.extend(images)
+        nsfw_content = (len(augmentations)-batch_size)
+        curr_idx += curr_idx+1
+        if(curr_idx == 10):
+            if(len(augmentations)<batch_size):
+                augmentations.extend([output.images[0]]*(len(augmentations)-batch_size))
+                print(f"WARNING:: augmentations contain {len(augmentations)-batch_size} nsfw")
+            break
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
-    return images
+    print(f"Length augmentations {len(augmentations)}")
+    return augmentations
 
 # TODO
 # Issue: cant backpropagate through controlnet pipe (torch.no_grad) --> look into DDPO implementation to backprob through forward pass of controlnet https://github.com/huggingface/trl/blob/main/trl/trainer/ddpo_trainer.py
