@@ -87,11 +87,11 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
         augmentations.extend(images)
         nsfw_content = (len(augmentations)-batch_size)
         curr_idx += 1
-        if(curr_idx >= 10):
+        if(curr_idx >= 50):
             break
     if(len(augmentations)<batch_size):
-        augmentations.extend([output.images[0]]*(batch_size- len(augmentations)))
         print(f"WARNING:: augmentations contain {batch_size- len(augmentations)}/{batch_size} nsfw")
+        augmentations.extend([output.images[0]]*(batch_size- len(augmentations)))
     assert len(augmentations) == batch_size, f"ERROR::Augmentations length ({len(augmentations)}) should equal the batch size ({batch_size})"
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
     return augmentations
