@@ -90,8 +90,8 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
         if(curr_idx >= 10):
             break
     if(len(augmentations)<batch_size):
-        augmentations.extend([output.images[0]]*(len(augmentations)-batch_size))
-        print(f"WARNING:: augmentations contain {len(augmentations)-batch_size}/{batch_size} nsfw")
+        augmentations.extend([output.images[0]]*(batch_size- len(augmentations)))
+        print(f"WARNING:: augmentations contain {batch_size- len(augmentations)}/{batch_size} nsfw")
     assert len(augmentations) == batch_size, f"ERROR::Augmentations length ({len(augmentations)}) should equal the batch size ({batch_size})"
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
     return augmentations
