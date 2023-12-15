@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 import torchvision
 import torch
+import pickle
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
@@ -18,6 +19,16 @@ def read_txt(file):
         lines = f.readlines()
     return lines
 
+def save_pkl(dictionary, path):
+    with open(path +'.pkl', 'wb') as fp:
+        pickle.dump(dictionary, fp)
+        print(f'INFO::Saved content to file {path}.pkl')
+
+def load_pkl(path):
+    with open(path+'.pkl', 'rb') as fp:
+        dictionary = pickle.load(fp)
+        print(f'INFO::Loaded content from file {path}.pkl')
+        return dictionary
 
 # idx_annotation ... np.array with shape W,H indices as 
 def index2color_annotation(idx_annotation, palette):
@@ -80,7 +91,7 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
                                 num_inference_steps=40, 
                                 height = height, 
                                 width = width,
-                                num_images_per_prompt = nsfw_content,
+                                num_images_per_prompt = nsfw_content, # TODO are they computed in parallel or iteratively?
                                 generator=generator)
         
         images = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
@@ -122,3 +133,6 @@ def augmentandoptimize_image_controlnet(controlnet_pipe, condition_image, prompt
     
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
     return images
+
+
+
