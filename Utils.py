@@ -62,16 +62,16 @@ def image2text_blip2(model, processor, paths, seed = 42):
 
 
 def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = None, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):
-    if(seed):
-        generator = torch.manual_seed(seed)
-    else: 
-        generator = None
+    
     negative_prompt = 'low quality, bad quality, sketches'
-
     nsfw_content = batch_size
     curr_idx = 0
     augmentations = []
     while((nsfw_content > 0)):
+        if(seed):
+            generator = torch.manual_seed(seed + curr_idx)
+        else: 
+            generator = None
         output = controlnet_pipe(prompt +", realistic looking, high-quality, extremely detailed, 4K, HQ", #+"best quality, extremely detailed" # 
                                 negative_prompt=negative_prompt, 
                                 image=condition_image, 
@@ -88,10 +88,10 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
         nsfw_content = (len(augmentations)-batch_size)
         curr_idx += 1
         if(curr_idx >= 10):
-            if(len(augmentations)<batch_size):
-                augmentations.extend([output.images[0]]*(len(augmentations)-batch_size))
-                print(f"WARNING:: augmentations contain {len(augmentations)-batch_size} nsfw")
             break
+    if(len(augmentations)<batch_size):
+        augmentations.extend([output.images[0]]*(len(augmentations)-batch_size))
+        print(f"WARNING:: augmentations contain {len(augmentations)-batch_size}/{batch_size} nsfw")
     assert len(augmentations) == batch_size, f"ERROR::Augmentations length ({len(augmentations)}) should equal the batch size ({batch_size})"
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
     return augmentations
