@@ -83,7 +83,7 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
             generator = torch.manual_seed(seed + curr_idx)
         else: 
             generator = None
-        output = controlnet_pipe(prompt +", realistic looking, high-quality, extremely detailed, 4K, HQ", #+"best quality, extremely detailed" # 
+        output = controlnet_pipe(prompt +", realistic looking, high-quality, extremely detailed", #+"best quality, extremely detailed" # 
                                 negative_prompt=negative_prompt, 
                                 image=condition_image, 
                                 controlnet_conditioning_scale=controlnet_conditioning_scale, 
@@ -100,12 +100,15 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
         curr_idx += 1
         if(curr_idx >= 50):
             break
+    num_nsfw = 0
     if(len(augmentations)<batch_size):
-        print(f"WARNING:: augmentations contain {batch_size- len(augmentations)}/{batch_size} nsfw")
-        augmentations.extend([output.images[0]]*(batch_size- len(augmentations)))
+        num_nsfw = batch_size- len(augmentations)
+        print(f"WARNING:: augmentations contain {num_nsfw}/{batch_size} nsfw")
+        augmentations.extend([output.images[0]]*(num_nsfw))
+    
     assert len(augmentations) == batch_size, f"ERROR::Augmentations length ({len(augmentations)}) should equal the batch size ({batch_size})"
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
-    return augmentations
+    return augmentations, num_nsfw
 
 # TODO
 # Issue: cant backpropagate through controlnet pipe (torch.no_grad) --> look into DDPO implementation to backprob through forward pass of controlnet https://github.com/huggingface/trl/blob/main/trl/trainer/ddpo_trainer.py

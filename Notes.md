@@ -19,7 +19,7 @@ pip install datasets
 
 # 1. Train segmentation model on real data 
 
-# 2. Generate Augmentations using ControlNet
+# 2. Generate Augmentations using ControlNet --> this will also generate and save image captions before generating the augmentations 
 python -u DataGeneration.py --experiment_name baseline --num_augmentations 100 --batch_size 4 --vis_every -1 --end_idx -1
 
 # 3. Compute uncertainties for the generated data

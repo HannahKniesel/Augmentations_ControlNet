@@ -212,6 +212,7 @@ if __name__ == "__main__":
     dataset = Ade20kDataset(args.start_idx, args.end_idx, args.seed)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     mean_time_img = []
+    total_nsfw = 0
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
         starttime_img = time.time()
 
@@ -227,7 +228,8 @@ if __name__ == "__main__":
             if(args.optimize):
                 augmented = augmentandoptimize_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
             else: 
-                augmented = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+                augmented, num_nsfw = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+                total_nsfw += num_nsfw
             augmentations.extend(augmented)
 
             transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
@@ -249,7 +251,7 @@ if __name__ == "__main__":
         elapsedtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(elapsedtime_img))
         remainingtime_img_str = str(timedelta(seconds=remaining_time))
         # remainingtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(remaining_time))
-        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Number of augmentations = {len(augmentations)} | Time for image = {elapsedtime_img_str} | Average time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | Remaining time = {remainingtime_img_str}")
+        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Number of augmentations = {len(augmentations)} | Time for image = {elapsedtime_img_str} | Average time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | Remaining time = {remainingtime_img_str} | {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW")
 
     end_time = time.time()
     elapsedtime = end_time - start_time
