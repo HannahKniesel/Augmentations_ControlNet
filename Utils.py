@@ -98,7 +98,7 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
         augmentations.extend(images)
         nsfw_content = np.min(((len(augmentations)-batch_size), batch_size))
         curr_idx += 1
-        if(curr_idx >= 50):
+        if(curr_idx >= 5):
             break
     num_nsfw = 0
     if(len(augmentations)<batch_size):
