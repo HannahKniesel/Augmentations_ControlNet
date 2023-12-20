@@ -223,15 +223,17 @@ if __name__ == "__main__":
         print(prompt)
 
         # TODO reduce batch size based on resolution
-        current_res = init_img.shape[1]*init_img.shape[2]
         max_res = 500000
-        batch_size = int((np.floor(max_res / current_res * args.batch_size),1))
-        print(batch_size)
+        current_res = init_img.shape[1]*init_img.shape[2]
+        batch_size = int(np.floor(max_res / current_res * args.batch_size))
         if(batch_size == 0):
             resize= torchvision.transforms.Resize((init_img.shape[1]//2, init_img.shape[2]//2))
             condition = resize(condition)
             annotation = resize(annotation)
-            batch_size = 1
+            # current_res = init_img.shape[1]*init_img.shape[2]
+            batch_size = 1 #int(np.floor(max_res / current_res * args.batch_size))
+
+            print(f"INFO::Resize image to {(init_img.shape[1]//2, init_img.shape[2]//2)}. Initial shape was {(init_img.shape[1], init_img.shape[2])}")
 
         else: 
             resize = None
