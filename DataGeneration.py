@@ -223,11 +223,11 @@ if __name__ == "__main__":
         print(prompt)
 
         # TODO reduce batch size based on resolution
-        current_res = init_img.shape[-1]*init_img.shape[-2]
+        current_res = init_img.shape[1]*init_img.shape[2]
         max_res = 500000
-        batch_size = np.max((np.floor(max_res / current_res * args.batch_size),1))
+        batch_size = int(np.max((np.floor(max_res / current_res * args.batch_size),1)))
 
-        print(batch_size)
+
         """if((init_img.shape[-1]*init_img.shape[-2])>max_res):
             fac = int(current_res/max_res)+1
             batch_size = np.max((args.batch_size // fac,1))"""
