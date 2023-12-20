@@ -79,7 +79,6 @@ class AbstractAde20k(TorchDataset):
 class Ade20kPromptDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, num_captions_per_image, seed = 42):
         super().__init__(start_idx, end_idx, seed)
-        self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
         res = [ele for ele in self.data_paths for i in range(num_captions_per_image)]
         self.aug_paths = [get_name(ele, i) for ele in self.data_paths for i in range(num_captions_per_image)]
         self.data_paths = res
@@ -99,6 +98,8 @@ class Ade20kPromptDataset(AbstractAde20k):
 class Ade20kDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, seed = 42):
         super().__init__(start_idx, end_idx, seed)
+        self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
+
 
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
