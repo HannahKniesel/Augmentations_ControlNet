@@ -31,6 +31,8 @@ print(f"Number res < {max_res} = {np.sum(resolutions<max_res)}\n")
 print(f"Max res < {max_res} = {np.max(resolutions[resolutions<max_res])}\n")
 print(f"Image res < {max_res} = {100 * np.sum(resolutions<max_res)/len(paths)}%\n")
 
+import pdb 
+pdb.set_trace()
 
 plt.figure()
 plt.hist(resolutions, density=False, bins=30)  # density=False would make counts
