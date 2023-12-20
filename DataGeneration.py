@@ -79,6 +79,7 @@ class AbstractAde20k(TorchDataset):
 class Ade20kPromptDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, num_captions_per_image, seed = 42):
         super().__init__(start_idx, end_idx, seed)
+        self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
         res = [ele for ele in self.data_paths for i in range(num_captions_per_image)]
         self.aug_paths = [get_name(ele, i) for ele in self.data_paths for i in range(num_captions_per_image)]
         self.data_paths = res
@@ -202,7 +203,8 @@ if __name__ == "__main__":
         shutil.copy(filename, save_path+prompts_folder)
 
     # load controlnet
-    controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-seg", torch_dtype=torch.float16)
+    checkpoint = "lllyasviel/control_v11p_sd15_seg"#"lllyasviel/sd-controlnet-seg"
+    controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype=torch.float16)
     controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
