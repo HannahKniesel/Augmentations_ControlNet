@@ -98,7 +98,7 @@ class Ade20kPromptDataset(AbstractAde20k):
 class Ade20kDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, seed = 42):
         super().__init__(start_idx, end_idx, seed)
-        self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
+        # self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
 
 
     def __getitem__(self, idx): 
@@ -216,23 +216,29 @@ if __name__ == "__main__":
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     mean_time_img = []
     total_nsfw = 0
+    batch_size = args.batch_size
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
         starttime_img = time.time()
 
         print(prompt)
 
+        # TODO reduce batch size based on resolution
+        current_res = init_img.shape[-1]*init_img.shape[-2]
+        max_res = 500000
+        batch_size = np.floor(max_res / current_res * args.batch_size)
+
+        """if((init_img.shape[-1]*init_img.shape[-2])>max_res):
+            fac = int(current_res/max_res)+1
+            batch_size = np.max((args.batch_size // fac,1))"""
+
         # get augmentations
         augmentations = []
         aug_annotations = []
-        while(len(augmentations)<args.num_augmentations):
-            curr_batch_size = np.min((args.batch_size, (args.num_augmentations - len(augmentations))))
-            # image = np.zeros((3,3))
-            # nsfw = 0
-            if(args.optimize):
-                augmented = augmentandoptimize_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
-            else: 
-                augmented, num_nsfw = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
-                total_nsfw += num_nsfw
+        while(len(augmentations)<args.num_augmentations):            
+            curr_batch_size = np.min((batch_size, (args.num_augmentations - len(augmentations))))
+            augmented, num_nsfw = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+        
+            total_nsfw += num_nsfw
             augmentations.extend(augmented)
 
             transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
@@ -254,7 +260,7 @@ if __name__ == "__main__":
         elapsedtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(elapsedtime_img))
         remainingtime_img_str = str(timedelta(seconds=remaining_time))
         # remainingtime_img_str = time.strftime("%Hh%Mm%Ss", time.gmtime(remaining_time))
-        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Resolution = {init_img.shape} | Number of augmentations = {len(augmentations)} | Time for image = {elapsedtime_img_str} | Average time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | Remaining time = {remainingtime_img_str} | {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW")
+        print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | Resolution = {init_img.shape} | Batch size = {batch_size} | Number of augmentations = {len(augmentations)} | Time for image = {elapsedtime_img_str} | Average time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | Remaining time = {remainingtime_img_str} | {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW")
 
     end_time = time.time()
     elapsedtime = end_time - start_time

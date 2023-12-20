@@ -19,18 +19,17 @@ for path in paths:
 
 resolutions = np.array(resolutions)
 
+max_res = 500000
+
 print(f"Max height = {np.max(heights)}")
 print(f"Min height = {np.min(heights)}\n")
 print(f"Max width = {np.max(widths)}")
 print(f"Min width = {np.min(widths)}\n")
 print(f"Max res = {np.max(resolutions)}")
 print(f"Min res = {np.min(resolutions)}\n")
-print(f"Number res < 1000000 = {np.sum(resolutions<1000000)}\n")
-print(f"Max res < 1000000 = {np.max(resolutions[resolutions<1000000])}\n")
-
-import pdb 
-pdb.set_trace()
-
+print(f"Number res < {max_res} = {np.sum(resolutions<max_res)}\n")
+print(f"Max res < {max_res} = {np.max(resolutions[resolutions<max_res])}\n")
+print(f"Image res < {max_res} = {100 * np.sum(resolutions<max_res)/len(paths)}%\n")
 
 
 plt.figure()
@@ -46,3 +45,11 @@ plt.ylabel('Probability')
 plt.xlabel('Resolution')
 plt.savefig("./resolution2.png")
 plt.close()
+
+
+plt.figure()
+plt.boxplot(resolutions)  # density=False would make counts
+plt.ylabel('Probability')
+plt.xlabel('Resolution')
+plt.savefig("./resolution3.png")
+plt.close
