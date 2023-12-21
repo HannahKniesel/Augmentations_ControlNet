@@ -3,14 +3,18 @@ from PIL import Image
 from ade_config import *
 import numpy as np
 import matplotlib.pyplot as plt
+import torchvision
 
 paths = glob.glob(data_path+images_folder+"/*"+images_format)
+aspect_resize = torchvision.transforms.Resize(size=512)
 
 resolutions = []
 widths = []
 heights = []
 for path in paths: 
-    img = np.array(Image.open(path))
+    img = Image.open(path)
+    img = aspect_resize(img)
+    img = np.array(img)
     w = img.shape[0]
     h = img.shape[1]
     resolutions.append(w*h)
@@ -31,21 +35,20 @@ print(f"Number res < {max_res} = {np.sum(resolutions<max_res)}\n")
 print(f"Max res < {max_res} = {np.max(resolutions[resolutions<max_res])}\n")
 print(f"Image res < {max_res} = {100 * np.sum(resolutions<max_res)/len(paths)}%\n")
 
-import pdb 
-pdb.set_trace()
+
 
 plt.figure()
 plt.hist(resolutions, density=False, bins=30)  # density=False would make counts
 plt.ylabel('Probability')
 plt.xlabel('Resolution')
-plt.savefig("./resolution.png")
+plt.savefig("./resolution_1.png")
 plt.close()
 
 plt.figure()
 plt.scatter(resolutions, np.ones_like(resolutions))  # density=False would make counts
 plt.ylabel('Probability')
 plt.xlabel('Resolution')
-plt.savefig("./resolution2.png")
+plt.savefig("./resolution2_1.png")
 plt.close()
 
 
@@ -53,5 +56,5 @@ plt.figure()
 plt.boxplot(resolutions)  # density=False would make counts
 plt.ylabel('Probability')
 plt.xlabel('Resolution')
-plt.savefig("./resolution3.png")
+plt.savefig("./resolution3_1.png")
 plt.close

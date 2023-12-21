@@ -99,12 +99,13 @@ class Ade20kDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, seed = 42):
         super().__init__(start_idx, end_idx, seed)
         # self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
+        self.aspect_resize = torchvision.transforms.Resize(size=512)
 
 
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
         # open image
-        init_image = (Image.open(path))
+        init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
             init_image = np.stack([init_image,init_image,init_image], axis = 0)
@@ -224,7 +225,7 @@ if __name__ == "__main__":
 
         # TODO reduce batch size based on resolution
         max_res = 500000
-        current_res = init_img.shape[1]*init_img.shape[2]
+        current_res = init_img.shape[1]*init_img.shape[2] # TODO change to condition
         batch_size = int(np.floor(max_res / current_res * args.batch_size))
         if(batch_size == 0):
             resize= torchvision.transforms.Resize((init_img.shape[1]//2, init_img.shape[2]//2))
@@ -235,13 +236,6 @@ if __name__ == "__main__":
 
             print(f"INFO::Resize image to {(init_img.shape[1]//2, init_img.shape[2]//2)}. Initial shape was {(init_img.shape[1], init_img.shape[2])}")
 
-        else: 
-            resize = None
-
-
-        """if((init_img.shape[-1]*init_img.shape[-2])>max_res):
-            fac = int(current_res/max_res)+1
-            batch_size = np.max((args.batch_size // fac,1))"""
 
         # get augmentations
         augmentations = []

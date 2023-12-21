@@ -86,8 +86,8 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
         output = controlnet_pipe(prompt +", realistic looking, high-quality, extremely detailed", #+"best quality, extremely detailed" # 
                                 negative_prompt=negative_prompt, 
                                 image=condition_image, 
-                                controlnet_conditioning_scale=controlnet_conditioning_scale, 
-                                guidance_scale = guidance_scale,
+                                #controlnet_conditioning_scale=controlnet_conditioning_scale, 
+                                #guidance_scale = guidance_scale,
                                 num_inference_steps=40, 
                                 height = height, 
                                 width = width,
