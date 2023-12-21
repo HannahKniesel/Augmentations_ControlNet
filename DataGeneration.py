@@ -205,7 +205,8 @@ if __name__ == "__main__":
         shutil.copy(filename, save_path+prompts_folder)
 
     # load controlnet
-    checkpoint = "lllyasviel/control_v11p_sd15_seg"#"lllyasviel/sd-controlnet-seg"
+    # checkpoint = "lllyasviel/control_v11p_sd15_seg" # Trained on COCO and Ade
+    checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
     controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype=torch.float16)
     controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
