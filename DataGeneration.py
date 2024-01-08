@@ -30,9 +30,9 @@ def get_name(path, idx):
     name = (".").join(name)
     return name
 
-def save_augmentations_with_gt(aug_annotations, augmentations, path):
+def save_augmentations_with_gt(aug_annotations, augmentations, path, start_aug_idx):
     for idx, (annotation, augmentation) in enumerate(zip(aug_annotations, augmentations)):
-        name = get_name(path, idx+1)
+        name = get_name(path, idx+1+start_aug_idx)
         annotation.save(save_path+annotations_folder+name+annotations_format)
         augmentation.save(save_path+images_folder+name+images_format)
     return
@@ -156,6 +156,9 @@ if __name__ == "__main__":
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
 
+    parser.add_argument('--start_idx_aug', type = int, default=0)
+
+
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
@@ -257,7 +260,7 @@ if __name__ == "__main__":
             # nsfw += 1
 
         # save augmentations
-        save_augmentations_with_gt(aug_annotations, augmentations, path[0])
+        save_augmentations_with_gt(aug_annotations, augmentations, path[0], args.start_idx_aug)
 
         if((args.vis_every >0 ) and ((img_idx %args.vis_every) == 0)): 
             visualize(aug_annotations, augmentations, init_img[0], condition[0].permute(1,2,0), prompt, Path(path[0]).stem)
