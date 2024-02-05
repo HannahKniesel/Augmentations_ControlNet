@@ -108,7 +108,7 @@ class Ade20kDataset(AbstractAde20k):
         init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
-            init_image = np.stack([init_image,init_image,init_image], axis = 0)
+            init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
         
         # open prompt
         prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+prompts_format)[0]
@@ -253,6 +253,7 @@ if __name__ == "__main__":
         aug_annotations = []
         while(len(augmentations)<args.num_augmentations):            
             curr_batch_size = np.min((batch_size, (args.num_augmentations - len(augmentations))))
+
             augmented, num_nsfw = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
             total_nsfw += num_nsfw
             augmentations.extend(augmented)
