@@ -152,6 +152,8 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type = int, default=4)
     parser.add_argument('--vis_every', type = int, default=1)
     parser.add_argument('--optimize', action='store_true')
+    parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.0")
+
 
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
@@ -211,8 +213,10 @@ if __name__ == "__main__":
         shutil.copy(filename, save_path+prompts_folder)
 
     # load controlnet
-    # checkpoint = "lllyasviel/control_v11p_sd15_seg" # Trained on COCO and Ade
-    checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
+    if(args.controlnet =="1.1"):
+        checkpoint = "lllyasviel/control_v11p_sd15_seg" # Trained on COCO and Ade
+    elif(args.controlnet =="1.0"):
+        checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
     controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype=torch.float16)
     controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
