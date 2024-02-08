@@ -62,7 +62,7 @@ def image2text_blip2(model, processor, paths, seed = 42):
     prompts = []
     for path in paths: 
         pil_image = Image.open(path)
-        prompt = "Question: What are shown in the photo? Answer:"#None
+        prompt = "Question: What are shown in the photo? Answer:"#None 
         inputs = processor(pil_image, prompt, return_tensors="pt").to(device, torch.float16)
         # inputs = processor(pil_image, prompt, return_tensors="pt").to(device)
         out = model.generate(**inputs)
@@ -72,9 +72,11 @@ def image2text_blip2(model, processor, paths, seed = 42):
     return prompts
 
 
-def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = None, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):
-    
-    negative_prompt = 'low quality, bad quality, sketches'
+def augment_image_controlnet(controlnet_pipe, condition_image, prompt, 
+                             height, width, batch_size, seed = None, 
+                             controlnet_conditioning_scale = 1.0, guidance_scale = 7.5, 
+                             negative_prompt = "low quality, bad quality, sketches", 
+                             additional_prompt = ", realistic looking, high-quality, extremely detailed"):
     nsfw_content = batch_size
     curr_idx = 0
     augmentations = []
@@ -83,11 +85,11 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt, height, w
             generator = torch.manual_seed(seed + curr_idx)
         else: 
             generator = None
-        output = controlnet_pipe(prompt +", realistic looking, high-quality, extremely detailed", #+"best quality, extremely detailed" # 
+        output = controlnet_pipe(prompt + additional_prompt, #+"best quality, extremely detailed" # 
                                 negative_prompt=negative_prompt, 
                                 image=condition_image, 
-                                #controlnet_conditioning_scale=controlnet_conditioning_scale, 
-                                #guidance_scale = guidance_scale,
+                                controlnet_conditioning_scale=controlnet_conditioning_scale, 
+                                guidance_scale = guidance_scale,
                                 num_inference_steps=40, 
                                 height = height, 
                                 width = width,

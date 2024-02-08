@@ -19,7 +19,7 @@ from torch.utils.data import Dataset as TorchDataset
 from torch.utils.data import DataLoader
 from Utils import *
 from tqdm import tqdm
-
+import json
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -126,10 +126,6 @@ class Ade20kDataset(AbstractAde20k):
         shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
         shutil.copy(path, save_path+images_folder+name+images_format)
 
-
-
-        # TODO return prompt
-
         return init_image, condition, annotation, prompt, path
 
 
@@ -153,7 +149,11 @@ if __name__ == "__main__":
     parser.add_argument('--vis_every', type = int, default=1)
     parser.add_argument('--optimize', action='store_true')
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.0")
-
+    
+    parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches")
+    parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed")
+    parser.add_argument('--controlnet_conditioning_scale', default=1.0)
+    parser.add_argument('--guidance_scale', type=float, default=7.5)
 
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
@@ -165,14 +165,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    # import ade config
     from ade_config import *
 
     start_time = time.time()
 
-    # save_path = save_path+"/"+args.condition+"_"+args.prompt_definition
     save_path = save_path+"/"+args.experiment_name+"/"
     print(f"Save to: {save_path}")
+
+    with open(save_path +'/commandline_args.txt', 'w') as f:
+        json.dump(args.__dict__, f, indent=2)
+
+    # with open('commandline_args.txt', 'r') as f:
+        # args.__dict__ = json.load(f)
     
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(save_path+images_folder, exist_ok=True)
@@ -190,9 +194,6 @@ if __name__ == "__main__":
         else:
             processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
             model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", torch_dtype=torch.float16, device_map="auto", load_in_8bit=True,)
-            # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", device_map="auto")
-            # processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-            # model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b", load_in_8bit=True, device_map={"": 0}, torch_dtype=torch.float16)  
         
         # dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, args.num_augmentations, args.seed)
         dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, 1, args.seed)
@@ -217,8 +218,8 @@ if __name__ == "__main__":
         checkpoint = "lllyasviel/control_v11p_sd15_seg" # Trained on COCO and Ade
     elif(args.controlnet =="1.0"):
         checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
-    controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype=torch.float16)
-    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
+    controlnet = ControlNetModel.from_pretrained(checkpoint, torch_dtype="auto") #torch.float16)
+    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype="auto") #torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
     controlnet_pipe.set_progress_bar_config(disable=True)
@@ -253,7 +254,12 @@ if __name__ == "__main__":
         aug_annotations = []
         while(len(augmentations)<args.num_augmentations):            
             curr_batch_size = np.min((batch_size, (args.num_augmentations - len(augmentations))))
-            augmented, num_nsfw = augment_image_controlnet(controlnet_pipe, condition, prompt[0], condition.shape[-2], condition.shape[-1], curr_batch_size, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5)
+            augmented, num_nsfw = augment_image_controlnet(controlnet_pipe, condition, prompt[0], 
+                                                           condition.shape[-2], condition.shape[-1], curr_batch_size, 
+                                                           negative_prompt=args.negative_prompt, 
+                                                           additional_prompt=args.additional_prompt, 
+                                                           controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
+                                                           guidance_scale=args.guidance_scale)
             total_nsfw += num_nsfw
             augmentations.extend(augmented)
 
