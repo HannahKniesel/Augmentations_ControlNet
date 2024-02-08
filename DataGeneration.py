@@ -154,6 +154,8 @@ if __name__ == "__main__":
     parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed")
     parser.add_argument('--controlnet_conditioning_scale', default=1.0)
     parser.add_argument('--guidance_scale', type=float, default=7.5)
+    parser.add_argument('--inference_steps', type=int, default=40)
+
 
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
@@ -260,7 +262,8 @@ if __name__ == "__main__":
                                                            negative_prompt=args.negative_prompt, 
                                                            additional_prompt=args.additional_prompt, 
                                                            controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
-                                                           guidance_scale=args.guidance_scale)
+                                                           guidance_scale=args.guidance_scale, 
+                                                           inference_steps=args.inference_steps)
             total_nsfw += num_nsfw
             augmentations.extend(augmented)
 

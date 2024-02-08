@@ -76,7 +76,8 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt,
                              height, width, batch_size, seed = None, 
                              controlnet_conditioning_scale = 1.0, guidance_scale = 7.5, 
                              negative_prompt = "low quality, bad quality, sketches", 
-                             additional_prompt = ", realistic looking, high-quality, extremely detailed"):
+                             additional_prompt = ", realistic looking, high-quality, extremely detailed", 
+                             inference_steps = 40):
     nsfw_content = batch_size
     curr_idx = 0
     augmentations = []
@@ -90,7 +91,7 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt,
                                 image=condition_image, 
                                 controlnet_conditioning_scale=controlnet_conditioning_scale, 
                                 guidance_scale = guidance_scale,
-                                num_inference_steps=40, 
+                                num_inference_steps=inference_steps, 
                                 height = height, 
                                 width = width,
                                 num_images_per_prompt = nsfw_content, # TODO are they computed in parallel or iteratively?
