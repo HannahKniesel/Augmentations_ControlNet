@@ -172,16 +172,17 @@ if __name__ == "__main__":
     save_path = save_path+"/"+args.experiment_name+"/"
     print(f"Save to: {save_path}")
 
-    with open(save_path +'/commandline_args.txt', 'w') as f:
-        json.dump(args.__dict__, f, indent=2)
-
-    # with open('commandline_args.txt', 'r') as f:
-        # args.__dict__ = json.load(f)
     
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(save_path+images_folder, exist_ok=True)
     os.makedirs(save_path+annotations_folder, exist_ok=True)
     os.makedirs(save_path+vis_folder, exist_ok=True)
+
+    with open(save_path +'/commandline_args.txt', 'w') as f:
+        json.dump(args.__dict__, f, indent=2)
+
+    # with open('commandline_args.txt', 'r') as f:
+        # args.__dict__ = json.load(f)
 
 
    
