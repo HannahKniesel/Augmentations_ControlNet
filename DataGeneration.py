@@ -108,7 +108,7 @@ class Ade20kDataset(AbstractAde20k):
         init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
-            init_image = np.stack([init_image,init_image,init_image], axis = 0)
+            init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
         
         # open prompt
         prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+prompts_format)[0]
