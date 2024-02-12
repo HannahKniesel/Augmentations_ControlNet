@@ -1178,8 +1178,8 @@ class StableDiffusionControlNetPipeline(
         cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
         print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
         # TODO 
-        latents.requires_grad_(True)
-        optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
+        # latents.requires_grad_(True)
+        # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
         
 
 
@@ -1289,6 +1289,7 @@ class StableDiffusionControlNetPipeline(
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                torch.cuda.empty_cache()
 
                 # from torch.autograd import Variable
                 with torch.enable_grad():
@@ -1300,6 +1301,7 @@ class StableDiffusionControlNetPipeline(
                     # pdb.set_trace()
 
                     # breakpoint()
+                    # TODO check why CUDA OOM is happening  
 
                     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                     save_image = self.image_processor.denormalize(save_image)
@@ -1309,9 +1311,10 @@ class StableDiffusionControlNetPipeline(
                     loss.backward()
                     optimizer.step()
                     optimizer.zero_grad() 
-                    
-          
-
+                
+                # decode optimized latents for visualization
+                save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                save_image = self.image_processor.denormalize(save_image)
                 plt.figure()
                 plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
                 plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}.jpg")

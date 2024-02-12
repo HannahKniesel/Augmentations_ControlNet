@@ -1,4 +1,3 @@
-from ade_config import *
 import time
 from torch.utils.data import DataLoader
 
@@ -17,11 +16,6 @@ def loss(images):
     return -1*torch.mean(blue_channel)
 
 
-    # Calculate the mean of the blue channel for each image
-    blueness = blue_channel.astype(float).mean(axis=(1,2))  # N
-    blueness = (2 * blueness - 255)/255 # normalize to [0,1]
-
-    return torch.from_numpy(blueness)
      
 
 additional_prompt = ", realistic looking, high-quality, extremely detailed, 4K, HQ, photorealistic"
@@ -40,10 +34,7 @@ controlnet_pipe.enable_model_cpu_offload()
 controlnet_pipe.set_progress_bar_config(disable=False)
 
 
-
-
-
-dataset = Ade20kDataset(-1, -1, 42)
+dataset = Ade20kDataset(-1, -1, False, 42)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 mean_time_img = []
 for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):

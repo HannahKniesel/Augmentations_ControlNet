@@ -72,7 +72,7 @@ if __name__ == "__main__":
                 real_paths = np.random.choice(real_paths, random_num).tolist()
 
             self.annotations_dir = data_path+annotations_folder
-            self.prompts_dir = base_path+prompts_folder
+            self.prompts_dir = glob(base_path+prompts_folder+"*")
             self.real_paths = real_paths
             self.seed = seed
             self.transform = totensor_transform

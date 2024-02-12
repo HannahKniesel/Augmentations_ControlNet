@@ -33,8 +33,8 @@ def get_name(path, idx):
 def save_augmentations_with_gt(aug_annotations, augmentations, path, start_aug_idx):
     for idx, (annotation, augmentation) in enumerate(zip(aug_annotations, augmentations)):
         name = get_name(path, idx+1+start_aug_idx)
-        annotation.save(save_path+annotations_folder+name+annotations_format)
-        augmentation.save(save_path+images_folder+name+images_format)
+        annotation.save(ade_config.save_path+ade_config.annotations_folder+name+ade_config.annotations_format)
+        augmentation.save(ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
     return
 
 def visualize(aug_annotations, augmentations, init_image, init_annotation, prompt, name):
@@ -47,18 +47,18 @@ def visualize(aug_annotations, augmentations, init_image, init_annotation, promp
     axis[2,0].set_xlabel(f"Image res: {init_image.size()} | GT res: {init_annotation.size()}")
 
     for i, (annotation, augmentation) in enumerate(zip(aug_annotations, augmentations)):
-        annotation = index2color_annotation(np.array(annotation), palette)
+        annotation = index2color_annotation(np.array(annotation), ade_config.palette)
         axis[0,i+1].imshow(augmentation)
         axis[1,i+1].imshow(annotation)
         axis[2,i+1].imshow(augmentation)
         axis[2,i+1].imshow(annotation, alpha = 0.5)
         axis[2,i+1].set_xlabel(f"Image res: {augmentation.size} | GT res: {annotation.shape}")
-    plt.savefig(save_path+vis_folder+name)
+    plt.savefig(ade_config.save_path+ade_config.vis_folder+name)
     plt.close()
 
 import ade_config
 class AbstractAde20k(TorchDataset):
-    def __init__(self, start_idx, end_idx, seed = 42):
+    def __init__(self, start_idx, end_idx, prompt_type, seed = 42):
         data_paths = sorted(glob(ade_config.data_path+ade_config.images_folder+"*.jpg"))
         if((start_idx > 0) and (end_idx >= 0)):
             data_paths = data_paths[start_idx:end_idx]
@@ -70,6 +70,11 @@ class AbstractAde20k(TorchDataset):
             start_idx = start_idx
         self.annotations_dir = ade_config.data_path+ade_config.annotations_folder
         self.prompts_dir = ade_config.data_path+ade_config.prompts_folder
+        if(prompt_type == "blip2"):
+            self.prompts_dir += "/blip2/"
+        elif(prompt_type == "gt"):
+            self.prompts_dir += "/gt/"
+
         self.data_paths = data_paths
         self.seed = seed
         self.transform = totensor_transform
@@ -79,7 +84,7 @@ class AbstractAde20k(TorchDataset):
 
 class Ade20kPromptDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, num_captions_per_image, seed = 42):
-        super().__init__(start_idx, end_idx, seed)
+        super().__init__(start_idx, end_idx, "", seed)
         res = [ele for ele in self.data_paths for i in range(num_captions_per_image)]
         self.aug_paths = [get_name(ele, i) for ele in self.data_paths for i in range(num_captions_per_image)]
         self.data_paths = res
@@ -97,10 +102,11 @@ class Ade20kPromptDataset(AbstractAde20k):
 
 
 class Ade20kDataset(AbstractAde20k):
-    def __init__(self, start_idx, end_idx, seed = 42):
-        super().__init__(start_idx, end_idx, seed)
+    def __init__(self, start_idx, end_idx, prompt_type, copy_data = True, seed = 42):
+        super().__init__(start_idx, end_idx, prompt_type, seed)
         # self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
         self.aspect_resize = torchvision.transforms.Resize(size=512)
+        self.copy_data = copy_data
 
 
     def __getitem__(self, idx): 
@@ -121,11 +127,14 @@ class Ade20kDataset(AbstractAde20k):
         annotation = np.array(annotation)
 
         condition = self.transform(index2color_annotation(annotation, ade_config.palette))
+
+
         
-        # copy annotation and init image
-        name = get_name(path, 0)
-        shutil.copy(annotation_path, ade_config.save_path+ade_config.annotations_folder+name+ade_config.annotations_format)
-        shutil.copy(path, ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
+        if(self.copy_data):
+            # copy annotation and init image
+            name = get_name(path, 0)
+            shutil.copy(annotation_path, ade_config.save_path+ade_config.annotations_folder+name+ade_config.annotations_format)
+            shutil.copy(path, ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
 
         return init_image, condition, annotation, prompt, path
 
@@ -150,6 +159,9 @@ if __name__ == "__main__":
     parser.add_argument('--vis_every', type = int, default=1)
     parser.add_argument('--optimize', action='store_true')
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.0")
+
+    parser.add_argument('--prompts', type=str, choices=["gt", "blip2"], default="blip2")
+
     
     parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches")
     parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed") # , high-quality, extremely detailed, 4K, HQ
@@ -168,54 +180,75 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    from ade_config import *
 
     start_time = time.time()
 
-    save_path = save_path+"/"+args.experiment_name+"/"
-    print(f"Save to: {save_path}")
+    ade_config.save_path = ade_config.save_path+"/"+args.experiment_name+"/"
+    print(f"Save to: {ade_config.save_path}")
 
     
-    os.makedirs(save_path, exist_ok=True)
-    os.makedirs(save_path+images_folder, exist_ok=True)
-    os.makedirs(save_path+annotations_folder, exist_ok=True)
-    os.makedirs(save_path+vis_folder, exist_ok=True)
+    os.makedirs(ade_config.save_path, exist_ok=True)
+    os.makedirs(ade_config.save_path+ade_config.images_folder, exist_ok=True)
+    os.makedirs(ade_config.save_path+ade_config.annotations_folder, exist_ok=True)
+    os.makedirs(ade_config.save_path+ade_config.vis_folder, exist_ok=True)
 
-    with open(save_path +'/commandline_args.txt', 'w') as f:
+    with open(ade_config.save_path +'/commandline_args.txt', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
     # with open('commandline_args.txt', 'r') as f:
         # args.__dict__ = json.load(f)
 
 
-   
+    # PROMPT GENERATION
     # check if prompts exist, if not generate prompts
-    if(not Path(data_path+prompts_folder).is_dir()): 
-        os.makedirs(data_path+prompts_folder, exist_ok=True)
-        if(args.local):
-            model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
-
-        else:
-            processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
-            model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", torch_dtype=torch.float16, device_map="auto", load_in_8bit=True,)
-        
-        # dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, args.num_augmentations, args.seed)
-        dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, 1, args.seed)
-        dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
-
-        for paths, aug_paths in tqdm(dataloader, desc="Generating prompts"): 
+    if(args.prompts == "blip2"):
+        if(not Path(ade_config.data_path+ade_config.prompts_folder+"/blip2/").is_dir()): 
+            os.makedirs(ade_config.data_path+ade_config.prompts_folder+"/blip2/", exist_ok=True)
             if(args.local):
-                prompts = image2text_gpt2(model, list(paths), args.seed)
-            else: 
-                prompts = image2text_blip2(model, processor, list(paths), args.seed)
-            for p, prompt in zip(aug_paths, prompts):
-                write_txt(data_path+prompts_folder+p+prompts_format, prompt)
-                
+                model = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
 
-    # copy prompts to new data folder 
-    os.makedirs(save_path+prompts_folder, exist_ok=True)
-    for filename in glob(os.path.join(data_path+prompts_folder, '*'+prompts_format)):
-        shutil.copy(filename, save_path+prompts_folder)
+            else:
+                processor = BlipProcessor.from_pretrained("Salesforce/blip2-flan-t5-xxl")
+                model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-flan-t5-xxl", torch_dtype=torch.float16, device_map="auto", load_in_8bit=True,)
+            
+            # dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, args.num_augmentations, args.seed)
+            dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, 1, args.seed)
+            dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+
+            for paths, aug_paths in tqdm(dataloader, desc="Generating prompts"): 
+                if(args.local):
+                    prompts = image2text_gpt2(model, list(paths), args.seed)
+                else: 
+                    prompts = image2text_blip2(model, processor, list(paths), args.seed)
+                for p, prompt in zip(aug_paths, prompts):
+                    write_txt(ade_config.data_path+ade_config.prompts_folder+"/blip2/"+p+ade_config.prompts_format, prompt)
+                    
+
+        # copy prompts to new data folder 
+        os.makedirs(ade_config.save_path+ade_config.prompts_folder+"/blip2/", exist_ok=True)
+        for filename in glob(os.path.join(ade_config.data_path+ade_config.prompts_folder+"/blip2/", '*'+ade_config.prompts_format)):
+            shutil.copy(filename, ade_config.save_path+ade_config.prompts_folder+"/blip2/")
+    elif(args.prompts == "gt"):
+        if(not Path(ade_config.data_path+ade_config.prompts_folder+"/gt/").is_dir()): 
+            os.makedirs(ade_config.data_path+ade_config.prompts_folder+"/gt/", exist_ok=True)
+            dataset = Ade20kPromptDataset(args.start_idx, args.end_idx, 1, args.seed)
+            dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+
+            for paths, aug_paths in tqdm(dataloader, desc="Generating prompts"):                 
+                for p in aug_paths:
+                    mask = np.array(Image.open(ade_config.data_path + ade_config.annotations_folder + "_".join(p.split("_")[:-1]) + ade_config.annotations_format))
+                    available_classes = np.unique(mask)
+                    class_names = [ade_config.classes[i] for i in available_classes][1:]
+                    prompt = ", ".join(class_names)
+                    write_txt(ade_config.data_path+ade_config.prompts_folder+"/gt/"+p+ade_config.prompts_format, prompt)
+                    
+
+        # copy prompts to new data folder 
+        os.makedirs(ade_config.save_path+ade_config.prompts_folder+"/gt/", exist_ok=True)
+        for filename in glob(os.path.join(ade_config.data_path+ade_config.prompts_folder+"/gt/", '*'+ade_config.prompts_format)):
+            shutil.copy(filename, ade_config.save_path+ade_config.prompts_folder+"/gt/")
+
+
 
     # load controlnet
     if(args.controlnet =="1.1"):
@@ -229,7 +262,7 @@ if __name__ == "__main__":
     controlnet_pipe.set_progress_bar_config(disable=True)
 
     # get data
-    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.seed)
+    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.prompts, args.seed)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     mean_time_img = []
     total_nsfw = 0
