@@ -56,9 +56,10 @@ def visualize(aug_annotations, augmentations, init_image, init_annotation, promp
     plt.savefig(save_path+vis_folder+name)
     plt.close()
 
+import ade_config
 class AbstractAde20k(TorchDataset):
     def __init__(self, start_idx, end_idx, seed = 42):
-        data_paths = sorted(glob(data_path+images_folder+"*.jpg"))
+        data_paths = sorted(glob(ade_config.data_path+ade_config.images_folder+"*.jpg"))
         if((start_idx > 0) and (end_idx >= 0)):
             data_paths = data_paths[start_idx:end_idx]
             start_idx = start_idx
@@ -67,8 +68,8 @@ class AbstractAde20k(TorchDataset):
         elif(start_idx > 0):
             data_paths = data_paths[start_idx:]
             start_idx = start_idx
-        self.annotations_dir = data_path+annotations_folder
-        self.prompts_dir = data_path+prompts_folder
+        self.annotations_dir = ade_config.data_path+ade_config.annotations_folder
+        self.prompts_dir = ade_config.data_path+ade_config.prompts_folder
         self.data_paths = data_paths
         self.seed = seed
         self.transform = totensor_transform
@@ -111,20 +112,20 @@ class Ade20kDataset(AbstractAde20k):
             init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
         
         # open prompt
-        prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+prompts_format)[0]
+        prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+ade_config.prompts_format)[0]
         
         # open mask
-        annotation_path = self.annotations_dir+Path(path).stem+annotations_format
+        annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)
         annotation = self.aspect_resize(annotation)
         annotation = np.array(annotation)
 
-        condition = self.transform(index2color_annotation(annotation, palette))
+        condition = self.transform(index2color_annotation(annotation, ade_config.palette))
         
         # copy annotation and init image
         name = get_name(path, 0)
-        shutil.copy(annotation_path, save_path+annotations_folder+name+annotations_format)
-        shutil.copy(path, save_path+images_folder+name+images_format)
+        shutil.copy(annotation_path, ade_config.save_path+ade_config.annotations_folder+name+ade_config.annotations_format)
+        shutil.copy(path, ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
 
         return init_image, condition, annotation, prompt, path
 
