@@ -34,7 +34,7 @@ controlnet_pipe.enable_model_cpu_offload()
 controlnet_pipe.set_progress_bar_config(disable=False)
 
 
-dataset = Ade20kDataset(-1, -1, False, 42)
+dataset = Ade20kDataset(-1, -1, prompt_type="", copy_data=False, seed=42)
 dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 mean_time_img = []
 for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
