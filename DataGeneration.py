@@ -151,8 +151,8 @@ if __name__ == "__main__":
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.0")
     
     parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches")
-    parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed")
-    parser.add_argument('--controlnet_conditioning_scale', default=1.0)
+    parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed") # , high-quality, extremely detailed, 4K, HQ
+    parser.add_argument('--controlnet_conditioning_scale', type = float, default=1.0)
     parser.add_argument('--guidance_scale', type=float, default=7.5)
     parser.add_argument('--inference_steps', type=int, default=40)
 
