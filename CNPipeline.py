@@ -1295,7 +1295,7 @@ class StableDiffusionControlNetPipeline(
                 with torch.enable_grad():
                     # latents = Variable(latents.data, requires_grad=True)
                     latents.requires_grad_(True)
-                    optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
+                    optimizer = torch.optim.SGD([latents], lr=1.0, momentum=0.9)
 
                     # import pdb 
                     # pdb.set_trace()
@@ -1305,6 +1305,11 @@ class StableDiffusionControlNetPipeline(
 
                     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                     save_image = self.image_processor.denormalize(save_image)
+
+                    plt.figure()
+                    plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                    plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}_before.jpg")
+                    plt.close()
 
                     loss = latent_loss(save_image)
                     # loss = torch.mean(latents)
@@ -1317,7 +1322,7 @@ class StableDiffusionControlNetPipeline(
                 save_image = self.image_processor.denormalize(save_image)
                 plt.figure()
                 plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}.jpg")
+                plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}_after.jpg")
                 plt.close()
 
                 # import pdb 
