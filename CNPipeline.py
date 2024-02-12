@@ -1307,7 +1307,7 @@ class StableDiffusionControlNetPipeline(
                     save_image = self.image_processor.denormalize(save_image)
 
                     plt.figure()
-                    plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                    plt.imshow(save_image[0].detach().cpu().squeeze().permute(1,2,0))
                     plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}_before.jpg")
                     plt.close()
 
