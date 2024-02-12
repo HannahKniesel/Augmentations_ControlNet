@@ -10,10 +10,10 @@ from DataGeneration import Ade20kDataset
 
 import matplotlib.pyplot as plt 
 
-def loss(images): 
+def loss_brighness(images): 
     # blue_channel = images[:,:,:,2]  # N x 256 x 256
-    blue_channel = images[:,2,:,:]  # N x C x 256 x 256
-    return -1*torch.mean(blue_channel)
+    # blue_channel = images[:,2,:,:]  # N x C x 256 x 256
+    return -1*torch.mean(images)
 
 
      

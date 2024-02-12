@@ -1295,7 +1295,7 @@ class StableDiffusionControlNetPipeline(
                 with torch.enable_grad():
                     # latents = Variable(latents.data, requires_grad=True)
                     latents.requires_grad_(True)
-                    optimizer = torch.optim.SGD([latents], lr=1.0, momentum=0.9)
+                    optimizer = torch.optim.SGD([latents], lr=5.0)
 
                     # import pdb 
                     # pdb.set_trace()
