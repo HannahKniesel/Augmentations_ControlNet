@@ -1172,7 +1172,11 @@ class StableDiffusionControlNetPipeline(
         # don't train controlnet parameters
         [param.requires_grad_(False) for param in self.controlnet.parameters()]
         cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
-        print(f"INFO::ControlNet numer parameters that require grads is {len(cn_param_with_grads)}")
+        print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
+
+        [param.requires_grad_(False) for param in self.vae.parameters()]
+        cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
+        print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
         # TODO 
         latents.requires_grad_(True)
         optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
@@ -1291,6 +1295,11 @@ class StableDiffusionControlNetPipeline(
                     # latents = Variable(latents.data, requires_grad=True)
                     latents.requires_grad_(True)
                     optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
+
+                    # import pdb 
+                    # pdb.set_trace()
+
+                    # breakpoint()
 
                     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                     save_image = self.image_processor.denormalize(save_image)
