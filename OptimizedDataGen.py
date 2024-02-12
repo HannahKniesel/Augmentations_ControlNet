@@ -10,7 +10,7 @@ from DataGeneration import Ade20kDataset
 
 import matplotlib.pyplot as plt 
 
-def loss_brighness(images): 
+def loss_brightness(images): 
     # blue_channel = images[:,:,:,2]  # N x 256 x 256
     # blue_channel = images[:,2,:,:]  # N x C x 256 x 256
     return -1*torch.mean(images)
@@ -22,7 +22,7 @@ additional_prompt = ", realistic looking, high-quality, extremely detailed, 4K, 
 negative_prompt = ", low quality, bad quality, sketches, flat, unrealistic"
 controlnet_conditioning_scale = 1.0
 guidance_scale = 7.5
-inference_steps = 20
+inference_steps = 50
 
 
 # load controlnet
@@ -58,7 +58,7 @@ for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(datalo
                             width = condition.shape[-1],
                             num_images_per_prompt = 1, # TODO are they computed in parallel or iteratively?
                             generator=None, 
-                            latent_loss = loss)
+                            latent_loss = loss_brightness)
         
     images = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
 
