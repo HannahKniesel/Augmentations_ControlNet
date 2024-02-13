@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from torch.autograd import Variable
 import matplotlib.pyplot as plt
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -21,6 +22,10 @@ import PIL.Image
 import torch
 import torch.nn.functional as F
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
+from datetime import datetime
+import os
+import time 
+import wandb
 
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.models import AutoencoderKL, ControlNetModel, ImageProjection, UNet2DConditionModel
@@ -908,6 +913,7 @@ class StableDiffusionControlNetPipeline(
         num_images_per_prompt: Optional[int] = 1,
         eta: float = 0.0,
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        latents: Optional[torch.FloatTensor] = None,
         prompt_embeds: Optional[torch.FloatTensor] = None,
         negative_prompt_embeds: Optional[torch.FloatTensor] = None,
         ip_adapter_image: Optional[PipelineImageInput] = None,
@@ -921,7 +927,8 @@ class StableDiffusionControlNetPipeline(
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-        latent_loss: Optional[Callable[[torch.FloatTensor], torch.FloatTensor]] = None,
+        optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": "", "log_to_wandb": False, "lr": 1000., "iters": 1, "loss": None, "optim_every_n_steps": 1},
+        img_name: str = "",
         **kwargs,
     ):
         r"""
@@ -1010,7 +1017,12 @@ class StableDiffusionControlNetPipeline(
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeine class.
 
-            latent_loss TODO
+            optimization_arguments: Dict[str, Any]: 
+                Parameters for latent space optimization. Should include values for: 
+                {"do_optimize": bool, "visualize": str, "log_to_wandb": bool, "lr": float, "iters": int, "loss": Callable, "optim_every_n_steps": int}, 
+            img_name: str:
+                File name where to save visualizations to 
+
 
         Examples:
 
@@ -1021,7 +1033,6 @@ class StableDiffusionControlNetPipeline(
                 second element is a list of `bool`s indicating whether the corresponding generated image contains
                 "not-safe-for-work" (nsfw) content.
         """
-
         callback = kwargs.pop("callback", None)
         callback_steps = kwargs.pop("callback_steps", None)
 
@@ -1039,6 +1050,10 @@ class StableDiffusionControlNetPipeline(
             )
 
         controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
+
+        if(optimization_arguments['visualize']):
+            optimization_arguments['visualize'] = os.path.join(optimization_arguments['visualize'], datetime.now().strftime('%d-%m-%Y_%H-%M-%S'), img_name)
+            os.makedirs(optimization_arguments['visualize'], exist_ok = True)
 
         # align format for control guidance
         if not isinstance(control_guidance_start, list) and isinstance(control_guidance_end, list):
@@ -1164,10 +1179,16 @@ class StableDiffusionControlNetPipeline(
 
         # 6. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
-        shape = (batch_size, num_channels_latents, height // self.vae_scale_factor, width // self.vae_scale_factor)
-        latents = randn_tensor(shape, generator=generator, device=device, dtype=prompt_embeds.dtype)
-        # scale the initial noise by the standard deviation required by the scheduler
-        latents = latents * self.scheduler.init_noise_sigma
+        latents = self.prepare_latents(
+            batch_size * num_images_per_prompt,
+            num_channels_latents,
+            height,
+            width,
+            prompt_embeds.dtype,
+            device,
+            generator,
+            latents,
+        )
 
         # don't train controlnet parameters
         [param.requires_grad_(False) for param in self.controlnet.parameters()]
@@ -1177,24 +1198,11 @@ class StableDiffusionControlNetPipeline(
         [param.requires_grad_(False) for param in self.vae.parameters()]
         cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
         print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
-        # TODO 
+        
+        # TODO for backpropagation through time include: 
         # latents.requires_grad_(True)
         # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
         
-
-
-
-        """latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
-        )"""
-
         # 6.5 Optionally get Guidance Scale Embedding
         timestep_cond = None
         if self.unet.config.time_cond_proj_dim is not None:
@@ -1223,8 +1231,12 @@ class StableDiffusionControlNetPipeline(
         is_unet_compiled = is_compiled_module(self.unet)
         is_controlnet_compiled = is_compiled_module(self.controlnet)
         is_torch_higher_equal_2_1 = is_torch_version(">=", "2.1")
+        
+        start_time_image = time.time()
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
+                torch.cuda.empty_cache()
+
                 # Relevant thread:
                 # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
                 if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
@@ -1251,7 +1263,6 @@ class StableDiffusionControlNetPipeline(
                         controlnet_cond_scale = controlnet_cond_scale[0]
                     cond_scale = controlnet_cond_scale * controlnet_keep[i]
 
-                print("DENOISE")
                 down_block_res_samples, mid_block_res_sample = self.controlnet(
                     control_model_input,
                     t,
@@ -1289,45 +1300,55 @@ class StableDiffusionControlNetPipeline(
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-                torch.cuda.empty_cache()
 
-                # from torch.autograd import Variable
-                with torch.enable_grad():
-                    # latents = Variable(latents.data, requires_grad=True)
-                    latents.requires_grad_(True)
-                    optimizer = torch.optim.SGD([latents], lr=5.0)
+                # optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": False, "log_to_wandb": False, lr": 1000., "iters": 1, "loss": None},
+                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0)):
+                    # START OPTIMIZATION 
 
-                    # import pdb 
-                    # pdb.set_trace()
+                    if(optimization_arguments["visualize"]):
+                        save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                        save_image = self.image_processor.denormalize(save_image)
 
-                    # breakpoint()
-                    # TODO check why CUDA OOM is happening  
+                        plt.figure()
+                        plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                        if(optimization_arguments["log_to_wandb"]):
+                            wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
+                        else:
+                            plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_before.jpg")
+                        plt.close()
 
+
+                    with torch.enable_grad():
+                        latents = Variable(latents.data, requires_grad=True)
+                        optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
+                        losses = []
+                        for iters in range(optimization_arguments["iters"]):
+                            loss = optimization_arguments["loss"](latents)
+                            # TODO on cluster change to 
+                            # loss = optimization_arguments["loss"](save_image)
+                            loss.backward()
+                            optimizer.step()
+                            optimizer.zero_grad() 
+
+                            """if(optimization_arguments["log_to_wandb"]):
+                                wandb.log({"Loss": loss.item()})"""
+
+
+
+                if(optimization_arguments["visualize"]):
+                    # decode optimized latents for visualization
                     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                     save_image = self.image_processor.denormalize(save_image)
-
                     plt.figure()
-                    plt.imshow(save_image[0].detach().cpu().squeeze().permute(1,2,0))
-                    plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}_before.jpg")
+                    plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                    if(optimization_arguments["log_to_wandb"]):
+                        wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
+
+                    else:
+                        plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_after.jpg")
                     plt.close()
 
-                    loss = latent_loss(save_image)
-                    # loss = torch.mean(latents)
-                    loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad() 
-                
-                # decode optimized latents for visualization
-                save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                save_image = self.image_processor.denormalize(save_image)
-                plt.figure()
-                plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                plt.savefig(f"./Debug/t_{str(int(t)).zfill(4)}_after.jpg")
-                plt.close()
-
-                # import pdb 
-                # pdb.set_trace()
-
+                    # END OPTIMIZATION 
 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
@@ -1347,18 +1368,15 @@ class StableDiffusionControlNetPipeline(
                         callback(step_idx, t, latents)
 
 
-        import pdb 
-        pdb.set_trace()
 
         # If we do sequential model offloading, let's offload unet and controlnet
         # manually for max memory savings
-        # TODO remove or rather move to end?!
         if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
             self.unet.to("cpu")
             self.controlnet.to("cpu")
             torch.cuda.empty_cache()
 
-        if not output_type == "latent": # TODO remove
+        if not output_type == "latent":
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
             ]
@@ -1379,5 +1397,15 @@ class StableDiffusionControlNetPipeline(
 
         if not return_dict:
             return (image, has_nsfw_concept)
+        
+        end_time_image = time.time()
+        elapsed_time = end_time_image - start_time_image # elapsed time in seconds
 
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+
+        # log final loss on image
+        loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+        loss_image = self.image_processor.denormalize(loss_image)
+        loss = optimization_arguments["loss"](loss_image)
+
+
+        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item()

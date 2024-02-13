@@ -4,11 +4,19 @@ from PIL import Image
 import torchvision
 import torch
 import pickle
+from pathlib import Path 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+resize_transform = torchvision.transforms.Resize(size=512)
 topil_transform = torchvision.transforms.ToPILImage()
 
+
+def get_name(path, idx):
+    name = Path(path).stem.split(".")
+    name[0] = name[0] + "_" + str(idx).zfill(4)
+    name = (".").join(name)
+    return name
 
 def write_txt(file, content):
     with open(file, 'w') as f:
@@ -72,6 +80,7 @@ def image2text_blip2(model, processor, paths, seed = 42):
     return prompts
 
 
+# TODO move out of file
 def augment_image_controlnet(controlnet_pipe, condition_image, prompt, 
                              height, width, batch_size, seed = None, 
                              controlnet_conditioning_scale = 1.0, guidance_scale = 7.5, 
@@ -113,32 +122,6 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt,
     # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
     return augmentations, num_nsfw
 
-# TODO
-# Issue: cant backpropagate through controlnet pipe (torch.no_grad) --> look into DDPO implementation to backprob through forward pass of controlnet https://github.com/huggingface/trl/blob/main/trl/trainer/ddpo_trainer.py
-def augmentandoptimize_image_controlnet(controlnet_pipe, condition_image, prompt, height, width, batch_size, seed = 42, controlnet_conditioning_scale = 1.0, guidance_scale = 0.5):
-    if(seed):
-        generator = torch.manual_seed(seed)
-    else: 
-        generator = None
-    import pdb 
-    pdb.set_trace()
-    latents = controlnet_pipe.vae.encode(condition_image.type(torch.float16).cuda()).latent_dist.sample()
-    images = controlnet_pipe(prompt, image = condition_image, latents = latents).images
-
-    negative_prompt = 'low quality, bad quality, sketches'
-    images = controlnet_pipe(prompt+", realistic looking, high-quality, extremely detailed, 4K, HQ", 
-                             negative_prompt=negative_prompt, 
-                             image=condition_image, 
-                             controlnet_conditioning_scale=controlnet_conditioning_scale, 
-                             guidance_scale = guidance_scale,
-                             num_inference_steps=40, 
-                             height = height, 
-                             width = width,
-                             num_images_per_prompt = batch_size,
-                             generator=generator).images
-    
-    # print(f"Expected: ({width},{height}) | Reality: {images[0].size}")
-    return images
 
 
 

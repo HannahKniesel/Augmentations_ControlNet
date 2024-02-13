@@ -21,8 +21,6 @@ from Utils import *
 from tqdm import tqdm
 import json
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
 
 def get_name(path, idx):
     name = Path(path).stem.split(".")
