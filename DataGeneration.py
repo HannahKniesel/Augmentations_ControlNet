@@ -68,11 +68,7 @@ class AbstractAde20k(TorchDataset):
             start_idx = start_idx
         self.annotations_dir = ade_config.data_path+ade_config.annotations_folder
         self.prompts_dir = ade_config.data_path+ade_config.prompts_folder
-        if(prompt_type == "blip2"):
-            self.prompts_dir += "/blip2/"
-        elif(prompt_type == "gt"):
-            self.prompts_dir += "/gt/"
-
+        self.prompts_dir = f"{self.prompts_dir}/{prompt_type}/"
         self.data_paths = data_paths
         self.seed = seed
         self.transform = totensor_transform

@@ -20,6 +20,8 @@ from CNPipeline import StableDiffusionControlNetPipeline
 
 
 # TODO load dotenv
+# TODO batchify
+# TODO make loss computation faster? Decoding to image space is costy.
 
 
 def save_augmentations_with_gt(aug_annotations, augmentations, path, start_aug_idx):
