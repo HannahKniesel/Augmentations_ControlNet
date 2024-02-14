@@ -1323,9 +1323,11 @@ class StableDiffusionControlNetPipeline(
                         optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
                         losses = []
                         for iters in range(optimization_arguments["iters"]):
-                            loss = optimization_arguments["loss"](latents)
+                            save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                            save_image = self.image_processor.denormalize(save_image)
+                            # loss = optimization_arguments["loss"](latents)
                             # TODO on cluster change to 
-                            # loss = optimization_arguments["loss"](save_image)
+                            loss = optimization_arguments["loss"](save_image)
                             loss.backward()
                             optimizer.step()
                             optimizer.zero_grad() 
