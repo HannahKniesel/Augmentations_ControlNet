@@ -156,6 +156,7 @@ if __name__ == "__main__":
     parser.add_argument('--vis_every', type = int, default=1)
     parser.add_argument('--optimize', action='store_true')
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.1")
+    parser.add_argument('--checkoint', type=str, default="")
     parser.add_argument('--crop', action='store_true')
 
 
@@ -255,7 +256,12 @@ if __name__ == "__main__":
     elif(args.controlnet =="1.0"):
         checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
     controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
-    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+    
+    # load controlnet from pretrained checkpoint
+    if(args.checkpoint != ""):
+        controlnet_pipe = StableDiffusionControlNetPipeline.from_single_file(args.checkpoint, controlnet = controlnet)
+    else:
+        controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
     controlnet_pipe.set_progress_bar_config(disable=True)
