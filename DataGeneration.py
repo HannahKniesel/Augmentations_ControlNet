@@ -96,10 +96,13 @@ class Ade20kPromptDataset(AbstractAde20k):
 
 
 class Ade20kDataset(AbstractAde20k):
-    def __init__(self, start_idx, end_idx, prompt_type, copy_data = True, seed = 42):
+    def __init__(self, start_idx, end_idx, prompt_type, copy_data = True, seed = 42, crop = False):
         super().__init__(start_idx, end_idx, prompt_type, seed)
         # self.data_paths = ['./data/ade/ADEChallengeData2016//images/training/ADE_train_00000082.jpg']
-        self.aspect_resize = torchvision.transforms.Resize(size=512)
+        if(crop):
+            self.aspect_resize = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), torchvision.transforms.CenterCrop((512,512))])
+        else:
+            self.aspect_resize = torchvision.transforms.Resize(size=512)
         self.copy_data = copy_data
 
 
@@ -146,22 +149,24 @@ if __name__ == "__main__":
     # parser.add_argument('--prompt_definition', type = str, default="img2text", choices=["vqa", "img2text", "annotations"])
     # parser.add_argument('--dataset', type = str, default="ade", choices = ["ade", "cocostuff10k"])
     parser.add_argument('--experiment_name', type = str, default="")
-    parser.add_argument('--num_augmentations', type = int, default=4)
+    parser.add_argument('--num_augmentations', type = int, default=1)
     parser.add_argument('--seed', type = int, default=4)
     parser.add_argument('--local', action='store_true')
     parser.add_argument('--batch_size', type = int, default=4)
     parser.add_argument('--vis_every', type = int, default=1)
     parser.add_argument('--optimize', action='store_true')
-    parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.0")
+    parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.1")
+    parser.add_argument('--crop', action='store_true')
 
-    parser.add_argument('--prompts', type=str, choices=["gt", "blip2"], default="blip2")
+
+    parser.add_argument('--prompts', type=str, choices=["gt", "blip2"], default="gt")
 
     
     parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches")
     parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed") # , high-quality, extremely detailed, 4K, HQ
     parser.add_argument('--controlnet_conditioning_scale', type = float, default=1.0)
     parser.add_argument('--guidance_scale', type=float, default=7.5)
-    parser.add_argument('--inference_steps', type=int, default=40)
+    parser.add_argument('--inference_steps', type=int, default=80)
 
 
     parser.add_argument('--start_idx', type = int, default=0)
@@ -256,7 +261,7 @@ if __name__ == "__main__":
     controlnet_pipe.set_progress_bar_config(disable=True)
 
     # get data
-    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.prompts, args.seed)
+    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.prompts, args.seed, crop = args.crop)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     mean_time_img = []
     total_nsfw = 0

@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 import shutil
+import torch
 
 from Utils import totensor_transform, resize_transform
 from Utils import read_txt, index2color_annotation
@@ -77,7 +78,9 @@ class Ade20kDataset(AbstractAde20k):
         annotation = self.aspect_resize(annotation)
         annotation = np.array(annotation)
 
-        condition = self.transform(index2color_annotation(annotation, ade_config.palette))
+        condition = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
+        # condition = torch.from_numpy(index2color_annotation(annotation, ade_config.palette)).permute(2,0,1) # condition is in range [0,255]
+
         
         if(self.copy_data):
             # copy annotation and init image (used during data generation)

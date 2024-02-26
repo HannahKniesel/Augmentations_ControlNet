@@ -7,8 +7,8 @@ from pathlib import Path
 import argparse
 import numpy as np
 
-from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format
-from Utils import read_txt
+from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
+from Utils import read_txt, index2color_annotation
 
 if __name__ == "__main__":
 
@@ -40,8 +40,9 @@ if __name__ == "__main__":
     # for first comparison
     image_paths = sorted(glob(os.path.join(args.comparisons[0], images_folder)+"/*"+images_format))
     real_image_paths = [p for p in image_paths if "_0000"+images_format in p] # get only real images
-    real_image_paths = real_image_paths[:args.n_images]
-    # real_image_paths = np.random.choice(real_image_paths, size=(args.n_images,))
+    # real_image_paths = real_image_paths[:args.n_images]
+    np.random.seed(7353)
+    real_image_paths = np.random.choice(real_image_paths, size=(args.n_images,))
     synthetic_image_paths = [p for p in image_paths if not ("_0000"+images_format in p)]
 
     base_prompts_folder = prompts_folder
@@ -58,7 +59,7 @@ if __name__ == "__main__":
         dp_name = Path(p).stem
 
         real_img = np.array(Image.open(p))
-        annotation = np.array(Image.open(f"{os.path.join(args.comparisons[0], annotations_folder, dp_name)}{annotations_format}"))
+        annotation = index2color_annotation(np.array(Image.open(f"{os.path.join(args.comparisons[0], annotations_folder, dp_name)}{annotations_format}")), palette)
         prompt = read_txt(f"{os.path.join(prompts_folder, dp_name)}{prompts_format}")[0]
         
         synthetic_img_path = [p for p in synthetic_image_paths if "_".join(dp_name.split("_")[:-1]) in p][0] 
@@ -82,7 +83,7 @@ if __name__ == "__main__":
         for c in range(1,len(args.comparisons)):
             real_path = f"{os.path.join(args.comparisons[c], images_folder, dp_name)}{images_format}"
             real_img = np.array(Image.open(real_path))
-            annotation = np.array(Image.open(f"{os.path.join(args.comparisons[c], annotations_folder, dp_name)}{annotations_format}"))
+            annotation = index2color_annotation(np.array(Image.open(f"{os.path.join(args.comparisons[c], annotations_folder, dp_name)}{annotations_format}")), palette)
             synthetic_path = os.path.join(Path(real_path).parent,  "_".join(Path(real_path).stem.split("_")[:-1])+"_0001"+images_format)
             synthetic_img = np.array(Image.open(synthetic_path))
             
@@ -110,6 +111,7 @@ if __name__ == "__main__":
         
         plt.tight_layout()
         plt.savefig(args.save_to + "/" + dp_name + ".jpg")
+        plt.close()
 
 
 

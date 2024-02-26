@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
     # get data
     dataset = Ade20kDataset(args.start_idx, args.end_idx, args.prompt_type, args.seed)
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     mean_time_img = []
     mean_time_augmentation = []
     total_nsfw = 0
