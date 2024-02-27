@@ -927,7 +927,7 @@ class StableDiffusionControlNetPipeline(
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-        optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": "", "log_to_wandb": False, "lr": 1000., "iters": 1, "loss": None, "optim_every_n_steps": 1},
+        optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": "", "log_to_wandb": False, "lr": 1000., "iters": 1, "loss": None, "optim_every_n_steps": 1, "start_t": 0, "end_t": 40},
         img_name: str = "",
         **kwargs,
     ):
@@ -1302,7 +1302,7 @@ class StableDiffusionControlNetPipeline(
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
 
                 # optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": False, "log_to_wandb": False, lr": 1000., "iters": 1, "loss": None},
-                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0)):
+                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i > optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
                     # START OPTIMIZATION 
 
                     if(optimization_arguments["visualize"]):

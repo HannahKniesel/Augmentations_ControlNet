@@ -73,6 +73,8 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1000.)
     parser.add_argument('--iters', type=int, default=1)
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
+    parser.add_argument('--start_t', type=int, default=0)
+    parser.add_argument('--end_t', type=int, default=40)
     parser.add_argument('--loss', type=str, choices=["brightness"], default="brightness")
     parser.add_argument('--visualize_optim', action='store_true')
 
@@ -94,6 +96,8 @@ if __name__ == "__main__":
                             "lr": args.lr, 
                             "iters": args.iters, 
                             "optim_every_n_steps": args.optim_every_n_steps,
+                            "start_t": args.start_t, 
+                            "end_t": args.end_t,
                             "loss": loss}
 
     if(optimization_params["log_to_wandb"]):
