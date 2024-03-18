@@ -899,7 +899,7 @@ class StableDiffusionControlNetPipeline(
     def num_timesteps(self):
         return self._num_timesteps
     
-    def forward_diffusion(self,
+    def backward_diffusion(self,
                           latents, 
                           timesteps, 
                           is_unet_compiled, 
@@ -934,6 +934,7 @@ class StableDiffusionControlNetPipeline(
                     controlnet_cond_scale = controlnet_cond_scale[0]
                 cond_scale = controlnet_cond_scale * controlnet_keep[i]
 
+
             down_block_res_samples, mid_block_res_sample = self.controlnet(
                 latent_model_input,
                 t,
@@ -951,6 +952,7 @@ class StableDiffusionControlNetPipeline(
                 down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
                 mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
+            self.controlnet.to("cpu")
             # predict the noise residual
             noise_pred = self.unet(
                 latent_model_input,
@@ -1129,7 +1131,9 @@ class StableDiffusionControlNetPipeline(
                 "Passing `callback_steps` as an input argument to `__call__` is deprecated, consider using `callback_on_step_end`",
             )
 
-        controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
+
+
+        self.controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
 
         if(optimization_arguments['visualize']):
             optimization_arguments['visualize'] = os.path.join(optimization_arguments['visualize'], datetime.now().strftime('%d-%m-%Y_%H-%M-%S'), img_name)
@@ -1147,7 +1151,7 @@ class StableDiffusionControlNetPipeline(
         elif not isinstance(control_guidance_end, list) and isinstance(control_guidance_start, list):
             control_guidance_end = len(control_guidance_start) * [control_guidance_end]
         elif not isinstance(control_guidance_start, list) and not isinstance(control_guidance_end, list):
-            mult = len(controlnet.nets) if isinstance(controlnet, MultiControlNetModel) else 1
+            mult = len(self.controlnet.nets) if isinstance(self.controlnet, MultiControlNetModel) else 1
             control_guidance_start, control_guidance_end = (
                 mult * [control_guidance_start],
                 mult * [control_guidance_end],
@@ -1181,13 +1185,13 @@ class StableDiffusionControlNetPipeline(
 
         device = self._execution_device
 
-        if isinstance(controlnet, MultiControlNetModel) and isinstance(controlnet_conditioning_scale, float):
-            controlnet_conditioning_scale = [controlnet_conditioning_scale] * len(controlnet.nets)
+        if isinstance(self.controlnet, MultiControlNetModel) and isinstance(controlnet_conditioning_scale, float):
+            controlnet_conditioning_scale = [controlnet_conditioning_scale] * len(self.controlnet.nets)
 
         global_pool_conditions = (
-            controlnet.config.global_pool_conditions
-            if isinstance(controlnet, ControlNetModel)
-            else controlnet.nets[0].config.global_pool_conditions
+            self.controlnet.config.global_pool_conditions
+            if isinstance(self.controlnet, ControlNetModel)
+            else self.controlnet.nets[0].config.global_pool_conditions
         )
         guess_mode = guess_mode or global_pool_conditions
 
@@ -1218,7 +1222,7 @@ class StableDiffusionControlNetPipeline(
             )
 
         # 4. Prepare image
-        if isinstance(controlnet, ControlNetModel):
+        if isinstance(self.controlnet, ControlNetModel):
             image = self.prepare_image(
                 image=image,
                 width=width,
@@ -1226,12 +1230,12 @@ class StableDiffusionControlNetPipeline(
                 batch_size=batch_size * num_images_per_prompt,
                 num_images_per_prompt=num_images_per_prompt,
                 device=device,
-                dtype=controlnet.dtype,
+                dtype=self.controlnet.dtype,
                 do_classifier_free_guidance=self.do_classifier_free_guidance,
                 guess_mode=guess_mode,
             )
             height, width = image.shape[-2:]
-        elif isinstance(controlnet, MultiControlNetModel):
+        elif isinstance(self.controlnet, MultiControlNetModel):
             images = []
 
             # Nested lists as ControlNet condition
@@ -1247,7 +1251,7 @@ class StableDiffusionControlNetPipeline(
                     batch_size=batch_size * num_images_per_prompt,
                     num_images_per_prompt=num_images_per_prompt,
                     device=device,
-                    dtype=controlnet.dtype,
+                    dtype=self.controlnet.dtype,
                     do_classifier_free_guidance=self.do_classifier_free_guidance,
                     guess_mode=guess_mode,
                 )
@@ -1298,7 +1302,7 @@ class StableDiffusionControlNetPipeline(
                 1.0 - float(i / len(timesteps) < s or (i + 1) / len(timesteps) > e)
                 for s, e in zip(control_guidance_start, control_guidance_end)
             ]
-            controlnet_keep.append(keeps[0] if isinstance(controlnet, ControlNetModel) else keeps)
+            controlnet_keep.append(keeps[0] if isinstance(self.controlnet, ControlNetModel) else keeps)
 
         # 8. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
@@ -1309,9 +1313,16 @@ class StableDiffusionControlNetPipeline(
         # TODO for backpropagation through time include: 
         with torch.enable_grad():
             # don't train controlnet 
+            weight_dtype = torch.float16
+            self.vae.to("cpu", dtype=weight_dtype)
+            self.unet.to("cpu", dtype=weight_dtype)
+            self.text_encoder.to("cpu", dtype=weight_dtype)
+            self.text_encoder.to("cpu")
+
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
             self.text_encoder.requires_grad_(False)
+            self.controlnet.train()
             self.controlnet.requires_grad_(True)
 
             print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
@@ -1334,8 +1345,7 @@ class StableDiffusionControlNetPipeline(
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
             # latents = Variable(latents.data, requires_grad=True)
-            controlnet.train()
-            params_to_optimize = controlnet.parameters() # [latents]
+            params_to_optimize = self.controlnet.parameters() # [latents]
             optimizer = torch.optim.SGD(params_to_optimize, lr=optimization_arguments["lr"])
             
             start_time_image = time.time()
@@ -1344,7 +1354,7 @@ class StableDiffusionControlNetPipeline(
                 latents = latents.half()
 
                 with torch.cuda.amp.autocast():
-                    decoded_image = self.forward_diffusion(latents, 
+                    decoded_image = self.backward_diffusion(latents, 
                                     timesteps, 
                                     is_unet_compiled, 
                                     is_controlnet_compiled, 
