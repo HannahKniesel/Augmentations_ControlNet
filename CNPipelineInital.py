@@ -1312,7 +1312,7 @@ class StableDiffusionControlNetPipeline(
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
             self.text_encoder.requires_grad_(False)
-            self.controlnet.requires_grad_(False)
+            self.controlnet.requires_grad_(True)
 
             print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
 
@@ -1334,7 +1334,7 @@ class StableDiffusionControlNetPipeline(
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
             # latents = Variable(latents.data, requires_grad=True)
-            optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
+            optimizer = torch.optim.SGD([controlnet.parameters()], lr=optimization_arguments["lr"])
             
             start_time_image = time.time()
 
@@ -1371,6 +1371,11 @@ class StableDiffusionControlNetPipeline(
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
                 axis[iter].imshow(decoded_image.detach().cpu().numpy().squeeze().transpose(1,2,0))
+
+                # Free GPU memory
+                del decoded_image
+                del loss
+                torch.cuda.empty_cache()
 
 
         # If we do sequential model offloading, let's offload unet and controlnet
