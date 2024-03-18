@@ -1308,18 +1308,25 @@ class StableDiffusionControlNetPipeline(
 
         # TODO for backpropagation through time include: 
         with torch.enable_grad():
-            # don't train controlnet parameters
-            [param.requires_grad_(False) for param in self.controlnet.parameters()]
-            cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
-            print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
+            # don't train controlnet 
+            self.vae.requires_grad_(False)
+            self.unet.requires_grad_(False)
+            self.text_encoder.requires_grad_(False)
+            self.controlnet.requires_grad_(False)
 
-            [param.requires_grad_(False) for param in self.vae.parameters()]
-            cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
-            print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
+            print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
 
-            [param.requires_grad_(False) for param in self.unet.parameters()]
-            cn_param_with_grads = [param for param in self.unet.parameters() if param.requires_grad]
-            print(f"INFO::UNet number parameters that require grads is {len(cn_param_with_grads)}")
+            # [param.requires_grad_(False) for param in self.controlnet.parameters()]
+            # cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
+            # print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
+
+            # [param.requires_grad_(False) for param in self.vae.parameters()]
+            # cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
+            # print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
+
+            # [param.requires_grad_(False) for param in self.unet.parameters()]
+            # cn_param_with_grads = [param for param in self.unet.parameters() if param.requires_grad]
+            # print(f"INFO::UNet number parameters that require grads is {len(cn_param_with_grads)}")
         
 
             latents.requires_grad_(True)
