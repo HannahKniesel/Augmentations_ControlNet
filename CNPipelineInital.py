@@ -1331,7 +1331,6 @@ class StableDiffusionControlNetPipeline(
 
             latents.requires_grad_(True)
             # Step 2: Convert model to float16
-            latents = latents.half()
             # Step 3: Loss scaling
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
@@ -1341,6 +1340,8 @@ class StableDiffusionControlNetPipeline(
             start_time_image = time.time()
 
             for iter in range(optimization_arguments["iters"]):
+                latents = latents.half()
+
                 with torch.cuda.amp.autocast():
                     decoded_image = self.forward_diffusion(latents, 
                                     timesteps, 
