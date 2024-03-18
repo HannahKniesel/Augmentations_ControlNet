@@ -918,6 +918,9 @@ class StableDiffusionControlNetPipeline(
         for i, t in enumerate(timesteps):
             torch.cuda.empty_cache()
 
+            import pdb 
+            pdb.set_trace()
+
             # Relevant thread:
             # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
             if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
@@ -925,16 +928,6 @@ class StableDiffusionControlNetPipeline(
             # expand the latents if we are doing classifier free guidance
             latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
             latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-
-            # controlnet(s) inference
-            if guess_mode and self.do_classifier_free_guidance:
-                # Infer ControlNet only for the conditional batch.
-                control_model_input = latents
-                control_model_input = self.scheduler.scale_model_input(control_model_input, t)
-                controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
-            else:
-                control_model_input = latent_model_input
-                controlnet_prompt_embeds = prompt_embeds
 
             if isinstance(controlnet_keep[i], list):
                 cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
@@ -945,9 +938,9 @@ class StableDiffusionControlNetPipeline(
                 cond_scale = controlnet_cond_scale * controlnet_keep[i]
 
             down_block_res_samples, mid_block_res_sample = self.controlnet(
-                control_model_input,
+                latent_model_input,
                 t,
-                encoder_hidden_states=controlnet_prompt_embeds,
+                encoder_hidden_states=prompt_embeds,
                 controlnet_cond=image,
                 conditioning_scale=cond_scale,
                 guess_mode=guess_mode,
