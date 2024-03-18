@@ -15,8 +15,12 @@ from pathlib import Path
 
 import ade_config
 from Datasets import Ade20kDataset
-from Utils import get_name
-from CNPipeline import StableDiffusionControlNetPipeline
+from Utils import get_name, device
+from CNPipeline import StableDiffusionControlNetPipeline as SDCNPipeline_Latents
+from CNPipelineInital import StableDiffusionControlNetPipeline as SDCNPipeline_Init
+
+
+from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, mse_loss
 
 
 # TODO load dotenv
@@ -31,14 +35,7 @@ def save_augmentations_with_gt(aug_annotations, augmentations, path, start_aug_i
         augmentation.save(ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
     return
 
-# TODO torch batchify loss for images
-def loss_brightness(images): 
-    if(type(images) is list): 
-        m = [-1*torch.mean(i) for i in images] #[-1*np.mean(np.array(i)) for i in images]
-        return np.mean(m)
-    # blue_channel = images[:,:,:,2]  # N x 256 x 256
-    # blue_channel = images[:,2,:,:]  # N x C x 256 x 256
-    return -1*torch.mean(images)
+
 
 
 if __name__ == "__main__":
@@ -55,13 +52,14 @@ if __name__ == "__main__":
     parser.add_argument('--num_augmentations', type = int, default=1)
     parser.add_argument('--seed', type = int, default=7353)
 
-    parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0"], default="1.0")
-    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2"], default="blip2")
+    parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0", "2.1"], default="1.1")
+    parser.add_argument('--finetuned_checkpoint', type=str, default="")
+    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt"], default="gt")
     parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches") # "low quality, bad quality, sketches, flat, unrealistic" 
     parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed") # , realistic looking, high-quality, extremely detailed, 4K, HQ, photorealistic" # , high-quality, extremely detailed, 4K, HQ
     parser.add_argument('--controlnet_conditioning_scale', type = float, default=1.0)
     parser.add_argument('--guidance_scale', type=float, default=7.5)
-    parser.add_argument('--inference_steps', type=int, default=40)
+    parser.add_argument('--inference_steps', type=int, default=80)
 
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
@@ -69,14 +67,16 @@ if __name__ == "__main__":
 
     # optimization parameters
     parser.add_argument('--optimize', action='store_true')
+    parser.add_argument('--optimization_target', type=str, choices = ["latents", "initial"], default="latents")
     parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--lr', type=float, default=1000.)
     parser.add_argument('--iters', type=int, default=1)
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
-    parser.add_argument('--end_t', type=int, default=40)
-    parser.add_argument('--loss', type=str, choices=["brightness"], default="brightness")
+    parser.add_argument('--end_t', type=int, default=80)
+    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "mse"], default="brightness")
     parser.add_argument('--visualize_optim', action='store_true')
+    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/train_model_scripted.pt")
 
 
     args = parser.parse_args()
@@ -84,6 +84,12 @@ if __name__ == "__main__":
 
     if(args.loss == "brightness"):
         loss = loss_brightness
+    elif(args.loss == "entropy"):
+        loss = entropy_loss
+    elif(args.loss == "mcdropout"):
+        loss = mcdropout_loss
+    elif(args.loss == "mse"):
+        loss = mse_loss
 
     if(args.visualize_optim): 
         vis_path = f"./Visualizations/Optim/{args.wandb_project}/lr-{args.lr}_i-{args.iters}_everyn-{args.optim_every_n_steps}_loss-{args.loss}/"
@@ -91,6 +97,7 @@ if __name__ == "__main__":
         vis_path = ""
 
     optimization_params = {"do_optimize": args.optimize, 
+                           "optimization_target": args.optimization_target,
                             "visualize": vis_path,
                             "log_to_wandb": bool(args.wandb_project), 
                             "lr": args.lr, 
@@ -105,7 +112,7 @@ if __name__ == "__main__":
         group = "Optimization" if optimization_params['do_optimize'] else "Base"
         wandb.init(config = optimization_params, reinit=True, group = group, mode="online")
         # wandb_name = self.wandb_name+"_"+str(wandb.run.id)
-        # wandb.run.name = wandb_name
+        wandb.run.name = f"{args.experiment_name}_{wandb.run.id}"
 
     start_time = time.time()
 
@@ -134,15 +141,37 @@ if __name__ == "__main__":
     for filename in glob(f"{load_prompt_path}/*{ade_config.prompts_format}"):
         shutil.copy(filename, save_prompt_path)
 
+    
+    if(args.model_path != ""):
+        seg_model = torch.jit.load(args.model_path)
+        seg_model = seg_model.to(device)
+    else: 
+        seg_model = None
 
 
     # load controlnet
-    if(args.controlnet =="1.1"):
+    if(args.controlnet == "2.1"):
+        checkpoint = "thibaud/controlnet-sd21-ade20k-diffusers" # ""
+        sd_ckpt = "stabilityai/stable-diffusion-2-1-base"
+    elif(args.controlnet =="1.1"):
         checkpoint = "lllyasviel/control_v11p_sd15_seg" # Trained on COCO and Ade
+        sd_ckpt = "runwayml/stable-diffusion-v1-5"
     elif(args.controlnet =="1.0"):
         checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
-    controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
-    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+        sd_ckpt = "runwayml/stable-diffusion-v1-5"
+    
+    if(args.finetuned_checkpoint != ""):
+        controlnet = ControlNetModel.from_pretrained(args.finetuned_checkpoint) 
+        print(f"INFO::load controlnet from finetuned checkpoint {args.finetuned_checkpoint}")
+    else: 
+        controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
+        print(f"INFO::load default controlnet {checkpoint}")
+
+    if(args.optimization_target == "latents"):
+        controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+    elif(args.optimization_target == "initial"):
+        controlnet_pipe = SDCNPipeline_Init.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
     controlnet_pipe.set_progress_bar_config(disable=True)
@@ -166,6 +195,7 @@ if __name__ == "__main__":
         aug_annotations = []
         while(len(augmentations)<args.num_augmentations):            
             # TODO include new pipeline
+            generator = torch.manual_seed(0)
             output, elapsed_time, loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
@@ -175,13 +205,19 @@ if __name__ == "__main__":
                                     height = condition.shape[-2], 
                                     width = condition.shape[-1],
                                     num_images_per_prompt = 1, 
-                                    generator=None, 
+                                    generator=generator, 
                                     img_name = Path(path[0]).stem,
-                                    optimization_arguments = optimization_params
+                                    optimization_arguments = optimization_params, 
+                                    seg_model = seg_model, 
+                                    real_image = init_img
                                     )
-                
-            augmented = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
-            num_nsfw = np.sum(output.nsfw_content_detected)
+
+            #try:
+            #    augmented = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
+            #    num_nsfw = np.sum(output.nsfw_content_detected)
+            #except: 
+            augmented = output.images
+            num_nsfw = 0
 
             print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss}")
 
@@ -217,13 +253,15 @@ if __name__ == "__main__":
         
         if(optimization_params["log_to_wandb"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
-                    "AvgTime Augmentation": mean_time_augmentation})
+                    "AvgTime Augmentation": np.mean(mean_time_augmentation)})
 
     end_time = time.time()
     elapsedtime = end_time - start_time
     elapsedtime_str = str(timedelta(seconds=elapsedtime))
     print(f"Time to generate {args.num_augmentations} augmentations for {len(dataset)} images was {elapsedtime_str}")
     print(f"Average loss over dataset is {np.mean(avg_loss)}.")
+
+
 
 
 

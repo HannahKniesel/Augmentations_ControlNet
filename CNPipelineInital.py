@@ -898,6 +898,94 @@ class StableDiffusionControlNetPipeline(
     @property
     def num_timesteps(self):
         return self._num_timesteps
+    
+    def forward_diffusion(self, 
+                          timesteps, 
+                          is_unet_compiled, 
+                          is_controlnet_compiled, 
+                          is_torch_higher_equal_2_1,
+                          guess_mode, 
+                          controlnet_keep,
+                          controlnet_conditioning_scale, 
+                          image, 
+                          prompt_embeds,
+                          timestep_cond, 
+                          added_cond_kwargs, 
+                          extra_step_kwargs, 
+                          generator
+                          ):
+        for i, t in enumerate(timesteps):
+            torch.cuda.empty_cache()
+
+            # Relevant thread:
+            # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
+            if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
+                torch._inductor.cudagraph_mark_step_begin()
+            # expand the latents if we are doing classifier free guidance
+            latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+            # controlnet(s) inference
+            if guess_mode and self.do_classifier_free_guidance:
+                # Infer ControlNet only for the conditional batch.
+                control_model_input = latents
+                control_model_input = self.scheduler.scale_model_input(control_model_input, t)
+                controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
+            else:
+                control_model_input = latent_model_input
+                controlnet_prompt_embeds = prompt_embeds
+
+            if isinstance(controlnet_keep[i], list):
+                cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+            else:
+                controlnet_cond_scale = controlnet_conditioning_scale
+                if isinstance(controlnet_cond_scale, list):
+                    controlnet_cond_scale = controlnet_cond_scale[0]
+                cond_scale = controlnet_cond_scale * controlnet_keep[i]
+
+            down_block_res_samples, mid_block_res_sample = self.controlnet(
+                control_model_input,
+                t,
+                encoder_hidden_states=controlnet_prompt_embeds,
+                controlnet_cond=image,
+                conditioning_scale=cond_scale,
+                guess_mode=guess_mode,
+                return_dict=False,
+            )
+
+            if guess_mode and self.do_classifier_free_guidance:
+                # Infered ControlNet only for the conditional batch.
+                # To apply the output of ControlNet to both the unconditional and conditional batches,
+                # add 0 to the unconditional batch to keep it unchanged.
+                down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
+                mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+
+            # predict the noise residual
+            noise_pred = self.unet(
+                latent_model_input,
+                t,
+                encoder_hidden_states=prompt_embeds,
+                timestep_cond=timestep_cond,
+                cross_attention_kwargs=self.cross_attention_kwargs,
+                down_block_additional_residuals=down_block_res_samples,
+                mid_block_additional_residual=mid_block_res_sample,
+                added_cond_kwargs=added_cond_kwargs,
+                return_dict=False,
+            )[0]
+
+            # perform guidance
+            if self.do_classifier_free_guidance:
+                noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+            # compute the previous noisy sample x_t -> x_t-1
+            latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+
+        decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+        decoded_image = self.image_processor.denormalize(decoded_image)
+                            
+        return decoded_image 
+                
 
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
@@ -982,8 +1070,6 @@ class StableDiffusionControlNetPipeline(
                 Pre-generated negative text embeddings. Can be used to easily tweak text inputs (prompt weighting). If
                 not provided, `negative_prompt_embeds` are generated from the `negative_prompt` input argument.
             ip_adapter_image: (`PipelineImageInput`, *optional*): Optional image input to work with IP Adapters.
-            output_type (`str`, *optional*, defaults to `"pil"`):
-                The output format of the generated image. Choose between `PIL.Image` or `np.array`.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~pipelines.stable_diffusion.StableDiffusionPipelineOutput`] instead of a
                 plain tuple.
@@ -1059,7 +1145,7 @@ class StableDiffusionControlNetPipeline(
             os.makedirs(optimization_arguments['visualize'], exist_ok = True)
             # make figure for visualization
             s = 7
-            fig,axis = plt.subplots(1, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
+            fig,axis = plt.subplots(1, optimization_arguments["iters"], figsize=(optimization_arguments["iters"]*s, 2*s))
             # axis[0,0].set_ylabel("Before Optimization", fontsize=24)
             # axis[1,0].set_ylabel("After Optimization", fontsize=24)
 
@@ -1199,19 +1285,7 @@ class StableDiffusionControlNetPipeline(
             latents,
         )
 
-        # don't train controlnet parameters
-        [param.requires_grad_(False) for param in self.controlnet.parameters()]
-        cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
-        print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
 
-        [param.requires_grad_(False) for param in self.vae.parameters()]
-        cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
-        print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
-        
-        # TODO for backpropagation through time include: 
-        # latents.requires_grad_(True)
-        # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
-        
         # 6.5 Optionally get Guidance Scale Embedding
         timestep_cond = None
         if self.unet.config.time_cond_proj_dim is not None:
@@ -1240,139 +1314,51 @@ class StableDiffusionControlNetPipeline(
         is_unet_compiled = is_compiled_module(self.unet)
         is_controlnet_compiled = is_compiled_module(self.controlnet)
         is_torch_higher_equal_2_1 = is_torch_version(">=", "2.1")
+
+        # TODO for backpropagation through time include: 
+        with torch.enable_grad():
+            # don't train controlnet parameters
+            [param.requires_grad_(False) for param in self.controlnet.parameters()]
+            cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
+            print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
+
+            [param.requires_grad_(False) for param in self.vae.parameters()]
+            cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
+            print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
         
-        start_time_image = time.time()
-        with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
-                torch.cuda.empty_cache()
 
-                # Relevant thread:
-                # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
-                if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
-                    torch._inductor.cudagraph_mark_step_begin()
-                # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+            latents.requires_grad_(True)
+            # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
+            # latents = Variable(latents.data, requires_grad=True)
+            optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
+            
+            start_time_image = time.time()
 
-                # controlnet(s) inference
-                if guess_mode and self.do_classifier_free_guidance:
-                    # Infer ControlNet only for the conditional batch.
-                    control_model_input = latents
-                    control_model_input = self.scheduler.scale_model_input(control_model_input, t)
-                    controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
-                else:
-                    control_model_input = latent_model_input
-                    controlnet_prompt_embeds = prompt_embeds
+            for iter in range(optimization_arguments["iters"]):
+                decoded_image = self.forward_diffusion(self, 
+                                timesteps, 
+                                is_unet_compiled, 
+                                is_controlnet_compiled, 
+                                is_torch_higher_equal_2_1,
+                                guess_mode, 
+                                controlnet_keep,
+                                controlnet_conditioning_scale, 
+                                image, 
+                                prompt_embeds,
+                                timestep_cond, 
+                                added_cond_kwargs, 
+                                extra_step_kwargs, 
+                                generator)
+                
+                # loss computation        
+                loss = optimization_arguments["loss"](decoded_image, real_image, seg_model)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad() 
 
-                if isinstance(controlnet_keep[i], list):
-                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
-                else:
-                    controlnet_cond_scale = controlnet_conditioning_scale
-                    if isinstance(controlnet_cond_scale, list):
-                        controlnet_cond_scale = controlnet_cond_scale[0]
-                    cond_scale = controlnet_cond_scale * controlnet_keep[i]
+                print(f"INFO::Iter = {iter}/{optimization_arguments["iters"]} Loss = {loss.item()}")
 
-                down_block_res_samples, mid_block_res_sample = self.controlnet(
-                    control_model_input,
-                    t,
-                    encoder_hidden_states=controlnet_prompt_embeds,
-                    controlnet_cond=image,
-                    conditioning_scale=cond_scale,
-                    guess_mode=guess_mode,
-                    return_dict=False,
-                )
-
-                if guess_mode and self.do_classifier_free_guidance:
-                    # Infered ControlNet only for the conditional batch.
-                    # To apply the output of ControlNet to both the unconditional and conditional batches,
-                    # add 0 to the unconditional batch to keep it unchanged.
-                    down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
-                    mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
-
-                # predict the noise residual
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
-
-                # perform guidance
-                if self.do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-
-                # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-
-                # if(optimization_arguments["visualize"] and ((i % VIS_STEPS) == 0)):
-                #     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                #     save_image = self.image_processor.denormalize(save_image)
-                #     axis[0, i//VIS_STEPS].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                #     axis[0, i//VIS_STEPS].set_title(f"t = {i}", fontsize=24)
-
-                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i > optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
-                    # START OPTIMIZATION 
-                    with torch.enable_grad():
-                        latents = Variable(latents.data, requires_grad=True)
-                        optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
-                        losses = []
-                        for iters in range(optimization_arguments["iters"]):
-                            save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                            save_image = self.image_processor.denormalize(save_image)
-                            # loss = optimization_arguments["loss"](latents)
-                            # TODO on cluster change to 
-                            loss = optimization_arguments["loss"](save_image, real_image, seg_model)
-                            loss.backward()
-                            optimizer.step()
-                            optimizer.zero_grad() 
-
-                            """if(optimization_arguments["log_to_wandb"]):
-                                wandb.log({"Loss": loss.item()})"""
-
-
-
-                if(optimization_arguments["visualize"] and ((i % VIS_STEPS) == 0)):
-                    # decode optimized latents for visualization
-                    save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                    save_image = self.image_processor.denormalize(save_image)
-                    axis[i//VIS_STEPS].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                    axis[i//VIS_STEPS].set_title(f"t = {i}", fontsize=24)
-
-
-                    # plt.figure()
-                    # plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                    # if(optimization_arguments["log_to_wandb"]):
-                    #     wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
-
-                    # else:
-                    #     plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_after.jpg")
-                    # plt.close()
-
-                    # END OPTIMIZATION 
-
-                if callback_on_step_end is not None:
-                    callback_kwargs = {}
-                    for k in callback_on_step_end_tensor_inputs:
-                        callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
-
-                    latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
-
-                # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
-                    progress_bar.update()
-                    if callback is not None and i % callback_steps == 0:
-                        step_idx = i // getattr(self.scheduler, "order", 1)
-                        callback(step_idx, t, latents)
-
+                axis[iter].imshow(decoded_image.detach().cpu().numpy().squeeze().transpose(1,2,0))
 
 
         # If we do sequential model offloading, let's offload unet and controlnet
@@ -1406,16 +1392,6 @@ class StableDiffusionControlNetPipeline(
         
         end_time_image = time.time()
         elapsed_time = end_time_image - start_time_image # elapsed time in seconds
-
-
-        # log final loss on image
-        loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-        loss_image = self.image_processor.denormalize(loss_image)
-        # axis[0, i//VIS_STEPS].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
-        if(optimization_arguments['visualize']):
-            axis[-1].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
-
-        loss = optimization_arguments["loss"](loss_image, real_image, seg_model)
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
         for k in optimization_arguments.keys(): 

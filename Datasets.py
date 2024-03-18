@@ -89,3 +89,43 @@ class Ade20kDataset(AbstractAde20k):
             shutil.copy(path, ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
 
         return init_image, condition, annotation, prompt, path
+    
+
+
+class SyntheticAde20kDataset(TorchDataset):
+    def __init__(self, data_path, prompts="gt"):
+        self.data_paths = sorted(glob(data_path+ade_config.images_folder+"*.jpg"))
+        self.data_paths = [path for path in self.data_paths if not ("_0000.jpg" in path)] # only get synthetic data
+        self.annotations_dir = data_path+ade_config.annotations_folder
+        self.prompts_dir = f"{data_path}{ade_config.prompts_folder}/{prompts}/"
+        self.transform = totensor_transform
+        self.aspect_resize = resize_transform
+
+
+    def __len__(self):
+        return len(self.data_paths)
+    
+
+    def __getitem__(self, idx): 
+        path = self.data_paths[idx]
+        # open image
+        init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        init_image = np.array(init_image)
+        if(len(init_image.shape) != 3):
+            init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
+        
+        init_image = self.transform(init_image)
+        
+        # open prompt
+        prompt = read_txt(self.prompts_dir+"_".join(Path(path).stem.split("_")[:-1])+"_0000"+ade_config.prompts_format)[0]
+        
+        # open mask
+        annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
+        annotation = Image.open(annotation_path)
+        annotation = self.aspect_resize(annotation)
+        annotation = np.array(annotation)
+
+        condition = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
+        
+       
+        return init_image, condition, annotation, prompt, path

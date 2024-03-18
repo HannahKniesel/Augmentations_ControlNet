@@ -4,11 +4,13 @@ from PIL import Image
 import torchvision
 import torch
 import pickle
+import ade_config
 from pathlib import Path 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 resize_transform = torchvision.transforms.Resize(size=512)
+centercrop = torchvision.transforms.CenterCrop(512)
 topil_transform = torchvision.transforms.ToPILImage()
 
 
@@ -76,9 +78,39 @@ def image2text_blip2(model, processor, paths, seed = 42):
         out = model.generate(**inputs)
 
         input_text = (processor.decode(out[0], skip_special_tokens=True))
-        prompts.append(input_text)
+        prompts.extend(input_text)
     return prompts
 
+def image2text_llava(processor, paths, seed = 42):
+    # image to text with llava
+    # torch.manual_seed(seed)
+    prompts = []
+    for path in paths: 
+        pil_image = Image.open(path)
+        prompt = "<image>\nUSER: What's the content of the photo?\nASSISTANT:"
+        outputs = processor(pil_image, prompt=prompt, generate_kwargs={"max_new_tokens": 75})
+        input_text = [o["generated_text"].split("\nASSISTANT: ")[1] for o in outputs]
+        prompts.extend(input_text)
+    return prompts
+
+def image2text_llava_gt(processor, paths, seed = 42):
+    # image to text with llava
+    # torch.manual_seed(seed)
+    prompts = []
+    for path in paths: 
+        pil_image = Image.open(path)
+        
+        # use gt_prompts
+        mask = np.array(Image.open(f"{ade_config.data_path}{ade_config.annotations_folder}{Path(path).stem}{ade_config.annotations_format}"))
+        available_classes = np.unique(mask)
+        class_names = [ade_config.classes[i] for i in available_classes][1:]
+        gt_classes = ", ".join(class_names)
+        prompt = f"<image>\nUSER: Can you describe the content of the photo using following words: '{gt_classes}'?\nASSISTANT:"
+
+        outputs = processor(pil_image, prompt=prompt, generate_kwargs={"max_new_tokens": 70})
+        input_text = [o["generated_text"].split("\nASSISTANT: ")[1] for o in outputs]
+        prompts.extend(input_text)
+    return prompts
 
 # TODO move out of file
 def augment_image_controlnet(controlnet_pipe, condition_image, prompt, 
@@ -106,7 +138,10 @@ def augment_image_controlnet(controlnet_pipe, condition_image, prompt,
                                 num_images_per_prompt = nsfw_content, # TODO are they computed in parallel or iteratively?
                                 generator=generator)
         
-        images = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
+        try:
+            images = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
+        except: 
+            images = output.images
         augmentations.extend(images)
         nsfw_content = np.min(((len(augmentations)-batch_size), batch_size))
         curr_idx += 1
