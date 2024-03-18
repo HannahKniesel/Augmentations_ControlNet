@@ -899,7 +899,8 @@ class StableDiffusionControlNetPipeline(
     def num_timesteps(self):
         return self._num_timesteps
     
-    def forward_diffusion(self, 
+    def forward_diffusion(self,
+                          latents, 
                           timesteps, 
                           is_unet_compiled, 
                           is_controlnet_compiled, 
@@ -1335,7 +1336,8 @@ class StableDiffusionControlNetPipeline(
             start_time_image = time.time()
 
             for iter in range(optimization_arguments["iters"]):
-                decoded_image = self.forward_diffusion(timesteps, 
+                decoded_image = self.forward_diffusion(latents, 
+                                timesteps, 
                                 is_unet_compiled, 
                                 is_controlnet_compiled, 
                                 is_torch_higher_equal_2_1,
