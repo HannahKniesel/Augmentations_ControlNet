@@ -175,3 +175,9 @@ SegmentationModel
 Debug
 diffusers/*
 wandb/*
+Debug_*
+Visualizations/*
+controlnet
+controlnet_model_out/*
+models
+seg_models

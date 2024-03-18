@@ -26,6 +26,7 @@ from datetime import datetime
 import os
 import time 
 import wandb
+from datetime import timedelta
 
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.models import AutoencoderKL, ControlNetModel, ImageProjection, UNet2DConditionModel
@@ -47,7 +48,7 @@ from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 
 from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMixin, TextualInversionLoaderMixin
 
-
+VIS_STEPS = 20
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -928,7 +929,9 @@ class StableDiffusionControlNetPipeline(
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": "", "log_to_wandb": False, "lr": 1000., "iters": 1, "loss": None, "optim_every_n_steps": 1, "start_t": 0, "end_t": 40},
+        seg_model: Callable = None,
         img_name: str = "",
+        real_image: torch.FloatTensor = None, 
         **kwargs,
     ):
         r"""
@@ -1054,6 +1057,12 @@ class StableDiffusionControlNetPipeline(
         if(optimization_arguments['visualize']):
             optimization_arguments['visualize'] = os.path.join(optimization_arguments['visualize'], datetime.now().strftime('%d-%m-%Y_%H-%M-%S'), img_name)
             os.makedirs(optimization_arguments['visualize'], exist_ok = True)
+            # make figure for visualization
+            s = 7
+            fig,axis = plt.subplots(1, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
+            # axis[0,0].set_ylabel("Before Optimization", fontsize=24)
+            # axis[1,0].set_ylabel("After Optimization", fontsize=24)
+
 
         # align format for control guidance
         if not isinstance(control_guidance_start, list) and isinstance(control_guidance_end, list):
@@ -1301,23 +1310,8 @@ class StableDiffusionControlNetPipeline(
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
 
-                # optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": False, "log_to_wandb": False, lr": 1000., "iters": 1, "loss": None},
                 if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i > optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
                     # START OPTIMIZATION 
-
-                    if(optimization_arguments["visualize"]):
-                        save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                        save_image = self.image_processor.denormalize(save_image)
-
-                        plt.figure()
-                        plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                        if(optimization_arguments["log_to_wandb"]):
-                            wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
-                        else:
-                            plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_before.jpg")
-                        plt.close()
-
-
                     with torch.enable_grad():
                         latents = Variable(latents.data, requires_grad=True)
                         optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
@@ -1327,7 +1321,7 @@ class StableDiffusionControlNetPipeline(
                             save_image = self.image_processor.denormalize(save_image)
                             # loss = optimization_arguments["loss"](latents)
                             # TODO on cluster change to 
-                            loss = optimization_arguments["loss"](save_image)
+                            loss = optimization_arguments["loss"](save_image, real_image, seg_model)
                             loss.backward()
                             optimizer.step()
                             optimizer.zero_grad() 
@@ -1337,18 +1331,22 @@ class StableDiffusionControlNetPipeline(
 
 
 
-                if(optimization_arguments["visualize"]):
+                if(optimization_arguments["visualize"] and ((i % VIS_STEPS) == 0)):
                     # decode optimized latents for visualization
                     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                     save_image = self.image_processor.denormalize(save_image)
-                    plt.figure()
-                    plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                    if(optimization_arguments["log_to_wandb"]):
-                        wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
+                    axis[i//VIS_STEPS].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                    axis[i//VIS_STEPS].set_title(f"t = {i}", fontsize=24)
 
-                    else:
-                        plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_after.jpg")
-                    plt.close()
+
+                    # plt.figure()
+                    # plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                    # if(optimization_arguments["log_to_wandb"]):
+                    #     wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
+
+                    # else:
+                    #     plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_after.jpg")
+                    # plt.close()
 
                     # END OPTIMIZATION 
 
@@ -1407,7 +1405,24 @@ class StableDiffusionControlNetPipeline(
         # log final loss on image
         loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
         loss_image = self.image_processor.denormalize(loss_image)
-        loss = optimization_arguments["loss"](loss_image)
+        # axis[0, i//VIS_STEPS].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
+        if(optimization_arguments['visualize']):
+            axis[-1].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
 
+        loss = optimization_arguments["loss"](loss_image, real_image, seg_model)
+
+        title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
+        for k in optimization_arguments.keys(): 
+            title += f"\n{k}: {optimization_arguments[k]}"
+
+        if(optimization_arguments['visualize']):
+            plt.suptitle(title, fontsize=24)
+            plt.tight_layout()
+            plt.subplots_adjust(hspace=0.4)
+            if(optimization_arguments["log_to_wandb"]):
+                wandb.log({f"Images": wandb.Image(plt)}) # TODO 
+            else:
+                plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
+            plt.close()
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item()
