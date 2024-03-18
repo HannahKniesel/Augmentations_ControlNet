@@ -1330,6 +1330,10 @@ class StableDiffusionControlNetPipeline(
         
 
             latents.requires_grad_(True)
+            # Step 2: Convert model to float16
+            latents = latents.half()
+            # Step 3: Loss scaling
+            scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
             # latents = Variable(latents.data, requires_grad=True)
             optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
@@ -1337,26 +1341,32 @@ class StableDiffusionControlNetPipeline(
             start_time_image = time.time()
 
             for iter in range(optimization_arguments["iters"]):
-                decoded_image = self.forward_diffusion(latents, 
-                                timesteps, 
-                                is_unet_compiled, 
-                                is_controlnet_compiled, 
-                                is_torch_higher_equal_2_1,
-                                guess_mode, 
-                                controlnet_keep,
-                                controlnet_conditioning_scale, 
-                                image, 
-                                prompt_embeds,
-                                timestep_cond, 
-                                added_cond_kwargs, 
-                                extra_step_kwargs, 
-                                generator)
+                with torch.cuda.amp.autocast():
+                    decoded_image = self.forward_diffusion(latents, 
+                                    timesteps, 
+                                    is_unet_compiled, 
+                                    is_controlnet_compiled, 
+                                    is_torch_higher_equal_2_1,
+                                    guess_mode, 
+                                    controlnet_keep,
+                                    controlnet_conditioning_scale, 
+                                    image, 
+                                    prompt_embeds,
+                                    timestep_cond, 
+                                    added_cond_kwargs, 
+                                    extra_step_kwargs, 
+                                    generator)
+                    loss = optimization_arguments["loss"](decoded_image, real_image, seg_model)
+
                 
-                # loss computation        
-                loss = optimization_arguments["loss"](decoded_image, real_image, seg_model)
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad() 
+                # Step 7: Backward pass with autocasting and loss scaling
+                scaler.scale(loss).backward()
+                
+                # Step 8: Gradient scaling
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+                
 
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
