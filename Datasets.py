@@ -70,8 +70,10 @@ class Ade20kDataset(AbstractAde20k):
             init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
         
         # open prompt
-        prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+ade_config.prompts_format)[0]
-        
+        try:
+            prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+ade_config.prompts_format)[0]
+        except: 
+            prompt = ""
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)

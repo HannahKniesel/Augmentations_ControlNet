@@ -1310,12 +1310,6 @@ class StableDiffusionControlNetPipeline(
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
 
-                # if(optimization_arguments["visualize"] and ((i % VIS_STEPS) == 0)):
-                #     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                #     save_image = self.image_processor.denormalize(save_image)
-                #     axis[0, i//VIS_STEPS].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                #     axis[0, i//VIS_STEPS].set_title(f"t = {i}", fontsize=24)
-
                 if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i > optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
                     # START OPTIMIZATION 
                     with torch.enable_grad():

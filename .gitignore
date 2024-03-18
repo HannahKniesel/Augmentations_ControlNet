@@ -176,3 +176,9 @@ Debug
 diffusers/*
 wandb/*
 models/*
+Debug_*
+Visualizations/*
+controlnet
+controlnet_model_out/*
+models
+seg_models

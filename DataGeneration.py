@@ -262,8 +262,13 @@ if __name__ == "__main__":
     elif(args.controlnet =="1.0"):
         checkpoint = "lllyasviel/sd-controlnet-seg" # Only trained on Ade
         sd_ckpt = "runwayml/stable-diffusion-v1-5"
-    controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
-    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+
+    controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)    
+    # load controlnet from pretrained checkpoint
+    if(args.checkpoint != ""):
+        controlnet_pipe = StableDiffusionControlNetPipeline.from_single_file(args.checkpoint, controlnet = controlnet)
+    else:
+        controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
     controlnet_pipe.set_progress_bar_config(disable=True)
