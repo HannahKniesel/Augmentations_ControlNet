@@ -1356,7 +1356,7 @@ class StableDiffusionControlNetPipeline(
                 optimizer.step()
                 optimizer.zero_grad() 
 
-                print(f"INFO::Iter = {iter}/{optimization_arguments["iters"]} Loss = {loss.item()}")
+                print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
                 axis[iter].imshow(decoded_image.detach().cpu().numpy().squeeze().transpose(1,2,0))
 
