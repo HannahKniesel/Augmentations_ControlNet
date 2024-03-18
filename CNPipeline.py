@@ -1058,7 +1058,7 @@ class StableDiffusionControlNetPipeline(
             optimization_arguments['visualize'] = os.path.join(optimization_arguments['visualize'], datetime.now().strftime('%d-%m-%Y_%H-%M-%S'), img_name)
             os.makedirs(optimization_arguments['visualize'], exist_ok = True)
             # make figure for visualization
-            VIS_STEPS = np.min((optimization_arguments['iters'], BASIC_VIS_STEPS))
+            VIS_STEPS = np.min((num_inference_steps//2, BASIC_VIS_STEPS))
             s = 7
             fig,axis = plt.subplots(1, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
             # axis[0,0].set_ylabel("Before Optimization", fontsize=24)
