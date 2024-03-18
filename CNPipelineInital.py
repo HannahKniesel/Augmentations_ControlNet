@@ -1335,8 +1335,7 @@ class StableDiffusionControlNetPipeline(
             start_time_image = time.time()
 
             for iter in range(optimization_arguments["iters"]):
-                decoded_image = self.forward_diffusion(self, 
-                                timesteps, 
+                decoded_image = self.forward_diffusion(timesteps, 
                                 is_unet_compiled, 
                                 is_controlnet_compiled, 
                                 is_torch_higher_equal_2_1,
