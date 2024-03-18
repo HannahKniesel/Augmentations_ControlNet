@@ -951,8 +951,6 @@ class StableDiffusionControlNetPipeline(
                 down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
                 mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
-            import pdb 
-            pdb.set_trace()
             # predict the noise residual
             noise_pred = self.unet(
                 latent_model_input,
@@ -1331,7 +1329,7 @@ class StableDiffusionControlNetPipeline(
             # print(f"INFO::UNet number parameters that require grads is {len(cn_param_with_grads)}")
         
 
-            latents.requires_grad_(True)
+            # latents.requires_grad_(True)
             # Step 3: Loss scaling
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
