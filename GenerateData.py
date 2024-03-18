@@ -167,7 +167,7 @@ if __name__ == "__main__":
         controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
         print(f"INFO::load default controlnet {checkpoint}")
 
-    if(args.optimization_target == "latents"):
+    if((args.optimization_target == "latents") or (not args.optimize)):
         controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
     elif(args.optimization_target == "initial"):
         controlnet_pipe = SDCNPipeline_Init.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)

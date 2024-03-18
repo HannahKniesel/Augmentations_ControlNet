@@ -1326,6 +1326,10 @@ class StableDiffusionControlNetPipeline(
             [param.requires_grad_(False) for param in self.vae.parameters()]
             cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
             print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
+
+            [param.requires_grad_(False) for param in self.unet.parameters()]
+            cn_param_with_grads = [param for param in self.unet.parameters() if param.requires_grad]
+            print(f"INFO::UNet number parameters that require grads is {len(cn_param_with_grads)}")
         
 
             latents.requires_grad_(True)
