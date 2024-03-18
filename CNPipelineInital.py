@@ -1334,7 +1334,9 @@ class StableDiffusionControlNetPipeline(
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
             # latents = Variable(latents.data, requires_grad=True)
-            optimizer = torch.optim.SGD([controlnet.parameters()], lr=optimization_arguments["lr"])
+            controlnet.train()
+            params_to_optimize = controlnet.parameters() # [latents]
+            optimizer = torch.optim.SGD(params_to_optimize, lr=optimization_arguments["lr"])
             
             start_time_image = time.time()
 
