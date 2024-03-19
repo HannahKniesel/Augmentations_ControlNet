@@ -1390,6 +1390,7 @@ class StableDiffusionControlNetPipeline(
 
                 axis[iter].imshow(decoded_image.detach().cpu().numpy().squeeze().transpose(1,2,0))
 
+                loss_item = loss.item()
                 # Free GPU memory
                 del decoded_image
                 del loss
@@ -1433,7 +1434,7 @@ class StableDiffusionControlNetPipeline(
         end_time_image = time.time()
         elapsed_time = end_time_image - start_time_image # elapsed time in seconds
 
-        title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
+        title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss_item}"
         for k in optimization_arguments.keys(): 
             title += f"\n{k}: {optimization_arguments[k]}"
 
@@ -1447,4 +1448,4 @@ class StableDiffusionControlNetPipeline(
                 plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
             plt.close()
 
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item()
+        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss_item
