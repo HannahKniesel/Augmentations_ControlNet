@@ -1383,8 +1383,6 @@ class StableDiffusionControlNetPipeline(
                 optimizer.zero_grad(set_to_none=True)
 
                 # reset scheduler
-                # controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
-                print(self.scheduler)
                 timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, None)             
                 # self.scheduler.set_begin_index()
 
