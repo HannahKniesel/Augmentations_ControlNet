@@ -916,46 +916,38 @@ class StableDiffusionControlNetPipeline(
                           generator
                           ):
         for i, t in enumerate(timesteps):
+            print(f"INFO::Step {i}/{len(timesteps)}")
             torch.cuda.empty_cache()
 
             # Relevant thread:
             # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
             if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
                 torch._inductor.cudagraph_mark_step_begin()
-            # expand the latents if we are doing classifier free guidance
-            latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
-            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+            latents = self.scheduler.scale_model_input(latents, t)
 
             if isinstance(controlnet_keep[i], list):
-                cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                controlnet_conditioning_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
             else:
                 controlnet_cond_scale = controlnet_conditioning_scale
                 if isinstance(controlnet_cond_scale, list):
                     controlnet_cond_scale = controlnet_cond_scale[0]
-                cond_scale = controlnet_cond_scale * controlnet_keep[i]
+                controlnet_conditioning_scale = controlnet_cond_scale * controlnet_keep[i]
 
 
             down_block_res_samples, mid_block_res_sample = self.controlnet(
-                latent_model_input,
+                latents,
                 t,
                 encoder_hidden_states=prompt_embeds,
                 controlnet_cond=image,
-                conditioning_scale=cond_scale,
-                guess_mode=guess_mode,
+                conditioning_scale=controlnet_conditioning_scale,
+                guess_mode=False,
                 return_dict=False,
             )
-
-            if guess_mode and self.do_classifier_free_guidance:
-                # Infered ControlNet only for the conditional batch.
-                # To apply the output of ControlNet to both the unconditional and conditional batches,
-                # add 0 to the unconditional batch to keep it unchanged.
-                down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
-                mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
             self.controlnet.to("cpu")
             # predict the noise residual
             noise_pred = self.unet(
-                latent_model_input,
+                latents,
                 t,
                 encoder_hidden_states=prompt_embeds,
                 timestep_cond=timestep_cond,
@@ -1317,7 +1309,6 @@ class StableDiffusionControlNetPipeline(
             self.vae.to("cpu", dtype=weight_dtype)
             self.unet.to("cpu", dtype=weight_dtype)
             self.text_encoder.to("cpu", dtype=weight_dtype)
-            self.text_encoder.to("cpu")
 
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
