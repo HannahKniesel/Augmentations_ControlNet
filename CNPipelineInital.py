@@ -1382,6 +1382,8 @@ class StableDiffusionControlNetPipeline(
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
+                print(latents)
+
                 # reset scheduler
                 timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, None)             
                 # self.scheduler.set_begin_index()
