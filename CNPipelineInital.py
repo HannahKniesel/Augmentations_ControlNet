@@ -1315,16 +1315,20 @@ class StableDiffusionControlNetPipeline(
         with torch.enable_grad():
             # don't train controlnet 
             weight_dtype = torch.float16
+            self.text_encoder.to("cpu", dtype=weight_dtype)
             self.vae.to("cpu", dtype=weight_dtype)
             self.unet.to("cpu", dtype=weight_dtype)
-            self.text_encoder.to("cpu", dtype=weight_dtype)
-            self.text_encoder.to("cpu")
+            self.controlnet.to("cpu", dtype=weight_dtype)
+            latents.to("gpu", dtype=weight_dtype)
+
 
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
             self.text_encoder.requires_grad_(False)
-            self.controlnet.train()
-            self.controlnet.requires_grad_(True)
+            # self.controlnet.train()
+            self.controlnet.requires_grad_(False)
+
+            latents.requires_grad_(True)
 
             print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
 
@@ -1352,8 +1356,6 @@ class StableDiffusionControlNetPipeline(
             start_time_image = time.time()
 
             for iter in range(optimization_arguments["iters"]):
-                latents = latents.half()
-
                 with torch.cuda.amp.autocast():
                     decoded_image = self.backward_diffusion(latents, 
                                     timesteps, 
