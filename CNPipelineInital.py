@@ -916,6 +916,7 @@ class StableDiffusionControlNetPipeline(
                           generator
                           ):
         for i, t in enumerate(timesteps):
+            print(f"INFO::Step {i}/{len(timesteps)}")
             torch.cuda.empty_cache()
 
             # Relevant thread:
