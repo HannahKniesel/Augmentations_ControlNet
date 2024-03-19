@@ -979,6 +979,8 @@ class StableDiffusionControlNetPipeline(
 
         decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
         decoded_image = self.image_processor.denormalize(decoded_image)
+        print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device} | latent_model_input = {latent_model_input.device} | U-Net = {self.unet.device}")
+
                             
         return decoded_image 
                 
@@ -1365,7 +1367,6 @@ class StableDiffusionControlNetPipeline(
                                     generator)
                     print(f"INFO:: decoded_image = {decoded_image.device} | real_image = {real_image.device}")
                     print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
-
                     loss = optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
 
                 
