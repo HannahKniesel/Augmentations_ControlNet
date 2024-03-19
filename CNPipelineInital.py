@@ -1319,8 +1319,7 @@ class StableDiffusionControlNetPipeline(
             self.vae.to("cpu", dtype=weight_dtype)
             self.unet.to("cpu", dtype=weight_dtype)
             self.controlnet.to("cpu", dtype=weight_dtype)
-            latents.to("gpu", dtype=weight_dtype)
-
+            latents.to("cuda", dtype=weight_dtype)
 
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
