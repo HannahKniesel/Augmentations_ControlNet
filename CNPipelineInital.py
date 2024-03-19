@@ -819,7 +819,7 @@ class StableDiffusionControlNetPipeline(
             latents = latents.to(device)
 
         # scale the initial noise by the standard deviation required by the scheduler
-        latents = latents * self.scheduler.init_noise_sigma
+        latents = latents * self.scheduler.init_noise_sigma # TODO remove when latents are optimized?!
         return latents
 
     # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.enable_freeu
@@ -1383,10 +1383,9 @@ class StableDiffusionControlNetPipeline(
                 optimizer.zero_grad(set_to_none=True)
 
                 # reset scheduler
-                self.scheduler.set_begin_index()
-                timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
-
-                                
+                # controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
+                # self.scheduler.set_begin_index()
+                # timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)             
 
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
