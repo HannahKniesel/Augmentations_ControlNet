@@ -1384,8 +1384,9 @@ class StableDiffusionControlNetPipeline(
 
                 # reset scheduler
                 # controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
-                # self.scheduler.set_begin_index()
-                # timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)             
+                print(self.scheduler)
+                timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)             
+                self.scheduler.set_begin_index()
 
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
