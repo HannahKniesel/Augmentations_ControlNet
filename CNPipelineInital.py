@@ -1358,6 +1358,7 @@ class StableDiffusionControlNetPipeline(
             start_time_image = time.time()
 
             for iter in range(optimization_arguments["iters"]):
+                print(latents)
                 with torch.cuda.amp.autocast():
                     decoded_image = self.backward_diffusion(latents, 
                                     timesteps, 
@@ -1382,7 +1383,6 @@ class StableDiffusionControlNetPipeline(
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
 
-                print(latents)
 
                 # reset scheduler
                 timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, None)             
