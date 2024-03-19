@@ -953,6 +953,7 @@ class StableDiffusionControlNetPipeline(
                 down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
                 mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
+
             # predict the noise residual
             noise_pred = self.unet(
                 latent_model_input,
@@ -965,6 +966,8 @@ class StableDiffusionControlNetPipeline(
                 added_cond_kwargs=added_cond_kwargs,
                 return_dict=False,
             )[0]
+
+            print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device} | latent_model_input = {latent_model_input.device} | U-Net = {self.unet.device}")
 
             # perform guidance
             if self.do_classifier_free_guidance:
