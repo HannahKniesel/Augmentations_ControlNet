@@ -1404,6 +1404,11 @@ class StableDiffusionControlNetPipeline(
             torch.cuda.empty_cache()
 
         if not output_type == "latent":
+            weight_dtype = torch.float32
+            latents.to(accelerator.device, dtype=weight_dtype)
+
+            print(f"INFO::latents = {latents.dtype}")
+
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
             ]
