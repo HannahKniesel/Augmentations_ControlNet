@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from accelerate import Accelerator
+from accelerate.utils import ProjectConfiguration, set_seed
+
 
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
@@ -1316,36 +1319,42 @@ class StableDiffusionControlNetPipeline(
         is_torch_higher_equal_2_1 = is_torch_version(">=", "2.1")
 
         # TODO for backpropagation through time include: 
+        # project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
         with torch.enable_grad():
-            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-            # don't train controlnet 
-            weight_dtype = torch.float16
-            self.text_encoder.to("cpu", dtype=weight_dtype)
-            self.vae.to("cuda", dtype=weight_dtype)
-            self.unet.to("cuda", dtype=weight_dtype)
-            self.controlnet.to("cuda", dtype=weight_dtype)
-            latents = latents.to("cuda", dtype=weight_dtype)
-            real_image = real_image.to("cuda", dtype=weight_dtype)
+            accelerator = Accelerator(
+                gradient_accumulation_steps=1,
+                mixed_precision="fp16",
+                log_with=None,
+                project_config=None,
+            )
+            weight_dtype = torch.float16 # mixed precision training
 
-            print(f"INFO:: real_image = {real_image.device} | latents = {latents.device} | U-Net = {self.unet.device}")
-
-            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-
+            # only require grads for latents 
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
             self.text_encoder.requires_grad_(False)
-            # self.controlnet.train()
             self.controlnet.requires_grad_(False)
             latents.requires_grad_(True)
-
             print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
 
-            # Step 3: Loss scaling
-            scaler = torch.cuda.amp.GradScaler()
-            # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
-            # latents = Variable(latents.data, requires_grad=True)
+            # move text encoder to CPU as we won't need it for backpropagation TODO is this true?
+            self.text_encoder.to("cpu", dtype=weight_dtype)
+
+            self.vae.to(accelerator.device, dtype=weight_dtype)
+            self.unet.to(accelerator.device, dtype=weight_dtype)
+            self.controlnet.to(accelerator.device, dtype=weight_dtype)
+            latents.to(accelerator.device, dtype=weight_dtype)
+            prompt_embeds.to(accelerator.device, dtype=weight_dtype)
+
+            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
+            print(f"INFO:: self.vae = {self.vae.device} | self.unet = {self.unet.device} | self.controlnet = {self.controlnet.device}")
+
+            # prepare optimizer for training
             params_to_optimize = [latents] #self.controlnet.parameters() # [latents]
             optimizer = torch.optim.SGD(params_to_optimize, lr=optimization_arguments["lr"])
+            
+            # Prepare everything with our `accelerator`. TODO what about preparing the input data?
+            self.controlnet, optimizer = accelerator.prepare(self.controlnet, optimizer)
             
             start_time_image = time.time()
 
@@ -1369,15 +1378,11 @@ class StableDiffusionControlNetPipeline(
                     print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
                     loss = optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
 
-                self.unet.to("cuda", dtype=weight_dtype)
-                # Step 7: Backward pass with autocasting and loss scaling
-                scaler.scale(loss).backward()
-                
-                # Step 8: Gradient scaling
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
-                
+                # self.unet.to("cuda", dtype=weight_dtype)
+                accelerator.backward(loss)
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                                
 
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
