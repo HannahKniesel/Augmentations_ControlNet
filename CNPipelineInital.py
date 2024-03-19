@@ -1316,12 +1316,13 @@ class StableDiffusionControlNetPipeline(
             # don't train controlnet 
             weight_dtype = torch.float16
             self.text_encoder.to("cpu", dtype=weight_dtype)
-            real_image.to("cuda", dtype=weight_dtype)
             self.vae.to("cuda", dtype=weight_dtype)
             self.unet.to("cuda", dtype=weight_dtype)
             self.controlnet.to("cuda", dtype=weight_dtype)
-            latents.to("cuda", dtype=weight_dtype)
-            print(f"INFO:: real_image = {real_image.device}")
+            latents = latents.to("cuda", dtype=weight_dtype)
+            real_image = real_image.to("cuda", dtype=weight_dtype)
+
+            print(f"INFO:: real_image = {real_image.device} | latents = {latents.device} | U-Net = {self.unet.device}")
 
             print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
 
@@ -1338,7 +1339,7 @@ class StableDiffusionControlNetPipeline(
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
             # latents = Variable(latents.data, requires_grad=True)
-            params_to_optimize = latents #self.controlnet.parameters() # [latents]
+            params_to_optimize = [latents] #self.controlnet.parameters() # [latents]
             optimizer = torch.optim.SGD(params_to_optimize, lr=optimization_arguments["lr"])
             
             start_time_image = time.time()
