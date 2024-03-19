@@ -1369,7 +1369,7 @@ class StableDiffusionControlNetPipeline(
                     print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
                     loss = optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
 
-                
+                self.unet.to("cuda", dtype=weight_dtype)
                 # Step 7: Backward pass with autocasting and loss scaling
                 scaler.scale(loss).backward()
                 
