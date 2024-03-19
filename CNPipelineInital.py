@@ -1358,7 +1358,7 @@ class StableDiffusionControlNetPipeline(
                                     added_cond_kwargs, 
                                     extra_step_kwargs, 
                                     generator)
-                    print(f"INFO:: decoded_image = {decoded_image.device} | real_image = {real_image.device} | seg_model = {seg_model.device}")
+                    print(f"INFO:: decoded_image = {decoded_image.device} | real_image = {real_image.device}")
                     print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
 
                     loss = optimization_arguments["loss"](decoded_image, real_image, seg_model)
