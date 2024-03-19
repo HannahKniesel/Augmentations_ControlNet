@@ -1313,13 +1313,15 @@ class StableDiffusionControlNetPipeline(
 
         # TODO for backpropagation through time include: 
         with torch.enable_grad():
+            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
             # don't train controlnet 
             weight_dtype = torch.float16
             self.text_encoder.to("cpu", dtype=weight_dtype)
-            self.vae.to("cpu", dtype=weight_dtype)
-            self.unet.to("cpu", dtype=weight_dtype)
-            self.controlnet.to("cpu", dtype=weight_dtype)
+            self.vae.to("cuda", dtype=weight_dtype)
+            self.unet.to("cuda", dtype=weight_dtype)
+            self.controlnet.to("cuda", dtype=weight_dtype)
             latents.to("cuda", dtype=weight_dtype)
+            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
 
             self.vae.requires_grad_(False)
             self.unet.requires_grad_(False)
