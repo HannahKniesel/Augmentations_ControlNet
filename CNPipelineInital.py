@@ -1321,6 +1321,8 @@ class StableDiffusionControlNetPipeline(
             self.unet.to("cuda", dtype=weight_dtype)
             self.controlnet.to("cuda", dtype=weight_dtype)
             latents.to("cuda", dtype=weight_dtype)
+            print(f"INFO:: decoded_image = {decoded_image.device} | real_image = {real_image.device}")
+
             print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
 
             self.vae.requires_grad_(False)
