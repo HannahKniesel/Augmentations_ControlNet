@@ -1378,7 +1378,7 @@ class StableDiffusionControlNetPipeline(
                     print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
                     loss = optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
 
-                # self.unet.to("cuda", dtype=weight_dtype)
+                self.unet.to("cuda", dtype=weight_dtype)
                 accelerator.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
