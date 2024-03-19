@@ -1442,6 +1442,8 @@ class StableDiffusionControlNetPipeline(
             plt.suptitle(title, fontsize=24)
             plt.tight_layout()
             plt.subplots_adjust(hspace=0.4)
+            plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
+
             if(optimization_arguments["log_to_wandb"]):
                 wandb.log({f"Images": wandb.Image(plt)}) # TODO 
             else:
