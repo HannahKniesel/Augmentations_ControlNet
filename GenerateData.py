@@ -172,7 +172,7 @@ if __name__ == "__main__":
     elif(args.optimization_target == "initial"):
         controlnet_pipe = SDCNPipeline_Init.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
-    controlnet_pipe.enable_model_cpu_offload()
+    # controlnet_pipe.enable_model_cpu_offload()
     controlnet_pipe.set_progress_bar_config(disable=True)
 
     # get data
