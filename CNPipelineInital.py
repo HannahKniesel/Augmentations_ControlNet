@@ -1404,7 +1404,7 @@ class StableDiffusionControlNetPipeline(
             torch.cuda.empty_cache()
 
         if not output_type == "latent":
-            weight_dtype = torch.float32
+            weight_dtype = torch.float16
             latents.to(accelerator.device, dtype=weight_dtype)
 
             print(f"INFO::latents = {latents.dtype}")
