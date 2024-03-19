@@ -1410,7 +1410,7 @@ class StableDiffusionControlNetPipeline(
 
             print(f"INFO::latents = {latents.dtype}")
 
-            image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
+            image = self.vae.decode(latents.to(accelerator.device, dtype=weight_dtype) / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
             ]
             image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
@@ -1448,4 +1448,8 @@ class StableDiffusionControlNetPipeline(
                 plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
             plt.close()
 
+
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss_item
+
+
+
