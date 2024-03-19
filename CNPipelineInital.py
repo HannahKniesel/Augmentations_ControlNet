@@ -1328,7 +1328,6 @@ class StableDiffusionControlNetPipeline(
             self.text_encoder.requires_grad_(False)
             # self.controlnet.train()
             self.controlnet.requires_grad_(False)
-
             latents.requires_grad_(True)
 
             print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
@@ -1361,7 +1360,7 @@ class StableDiffusionControlNetPipeline(
                     print(f"INFO:: decoded_image = {decoded_image.device} | real_image = {real_image.device}")
                     print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
 
-                    loss = optimization_arguments["loss"](decoded_image, real_image, seg_model)
+                    loss = optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
 
                 
                 # Step 7: Backward pass with autocasting and loss scaling
