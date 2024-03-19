@@ -1322,11 +1322,11 @@ class StableDiffusionControlNetPipeline(
         with torch.enable_grad():
             accelerator = Accelerator(
                 gradient_accumulation_steps=1,
-                mixed_precision="fp16",
+                mixed_precision="bf16",
                 log_with=None,
                 project_config=None,
             )
-            weight_dtype = torch.float16 # mixed precision training
+            weight_dtype = torch.bfloat16 # toch.float16 # mixed precision training
 
             # only require grads for latents 
             self.vae.requires_grad_(False)
@@ -1405,7 +1405,7 @@ class StableDiffusionControlNetPipeline(
             torch.cuda.empty_cache()
 
         if not output_type == "latent":
-            weight_dtype = torch.float16
+            # weight_dtype = torch.bfloat16
             latents = latents.to(accelerator.device, dtype=weight_dtype)
 
             print(f"INFO::latents = {latents.dtype}")
