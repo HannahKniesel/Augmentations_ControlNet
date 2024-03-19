@@ -1388,7 +1388,7 @@ class StableDiffusionControlNetPipeline(
 
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
 
-                axis[iter].imshow(decoded_image.detach().cpu().numpy().squeeze().transpose(1,2,0))
+                axis[iter].imshow(decoded_image.detach().cpu().float().numpy().squeeze().transpose(1,2,0))
 
                 loss_item = loss.item()
                 # Free GPU memory
@@ -1406,11 +1406,11 @@ class StableDiffusionControlNetPipeline(
 
         if not output_type == "latent":
             weight_dtype = torch.float16
-            latents.to(accelerator.device, dtype=weight_dtype)
+            latents = latents.to(accelerator.device, dtype=weight_dtype)
 
             print(f"INFO::latents = {latents.dtype}")
 
-            image = self.vae.decode(latents.to(accelerator.device, dtype=weight_dtype) / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
+            image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
             ]
             image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
@@ -1442,7 +1442,7 @@ class StableDiffusionControlNetPipeline(
             plt.suptitle(title, fontsize=24)
             plt.tight_layout()
             plt.subplots_adjust(hspace=0.4)
-            plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
+            # plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
 
             if(optimization_arguments["log_to_wandb"]):
                 wandb.log({f"Images": wandb.Image(plt)}) # TODO 
