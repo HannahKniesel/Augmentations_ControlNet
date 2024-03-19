@@ -1317,6 +1317,7 @@ class StableDiffusionControlNetPipeline(
             # don't train controlnet 
             weight_dtype = torch.float16
             self.text_encoder.to("cpu", dtype=weight_dtype)
+            real_image.to("cuda", dtype=weight_dtype)
             self.vae.to("cuda", dtype=weight_dtype)
             self.unet.to("cuda", dtype=weight_dtype)
             self.controlnet.to("cuda", dtype=weight_dtype)
@@ -1333,20 +1334,6 @@ class StableDiffusionControlNetPipeline(
 
             print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
 
-            # [param.requires_grad_(False) for param in self.controlnet.parameters()]
-            # cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
-            # print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
-
-            # [param.requires_grad_(False) for param in self.vae.parameters()]
-            # cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
-            # print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
-
-            # [param.requires_grad_(False) for param in self.unet.parameters()]
-            # cn_param_with_grads = [param for param in self.unet.parameters() if param.requires_grad]
-            # print(f"INFO::UNet number parameters that require grads is {len(cn_param_with_grads)}")
-        
-
-            # latents.requires_grad_(True)
             # Step 3: Loss scaling
             scaler = torch.cuda.amp.GradScaler()
             # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
