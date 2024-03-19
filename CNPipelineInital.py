@@ -983,8 +983,7 @@ class StableDiffusionControlNetPipeline(
         decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
         decoded_image = self.image_processor.denormalize(decoded_image)
         print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device} | latent_model_input = {latent_model_input.device} | U-Net = {self.unet.device}")
-
-                            
+                    
         return decoded_image 
                 
 
@@ -1382,6 +1381,10 @@ class StableDiffusionControlNetPipeline(
                 accelerator.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
+
+                # reset scheduler
+                timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
+
                                 
 
                 print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
