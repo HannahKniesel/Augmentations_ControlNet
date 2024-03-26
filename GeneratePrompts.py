@@ -11,7 +11,7 @@ from PIL import Image
 
 import ade_config
 from Datasets import Ade20kPromptDataset
-from Utils import image2text_blip2, image2text_llava, image2text_llava_gt, write_txt
+from Utils import image2text_blip2, image2text_llava, image2text_llava_gt, image2text_small_llava_gt, write_txt
 
 
 if __name__ == "__main__":
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     # General Parameters
     parser.add_argument('--batch_size', type = int, default=4)
     parser.add_argument('--seed', type = int, default=7353)
-    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt"], default="blip2")
+    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt", "short_llava_gt"], default="blip2")
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
@@ -83,6 +83,19 @@ if __name__ == "__main__":
             prompts = image2text_llava_gt(processor, list(paths), args.seed)
             for p, prompt in zip(aug_paths, prompts):
                 write_txt(os.path.join(prompt_path,p)+ade_config.prompts_format, prompt)
+
+    elif(args.prompt_type == "short_llava_gt"):
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16
+        )
+        model_id = "llava-hf/llava-1.5-7b-hf"
+        processor = pipeline("image-to-text", model=model_id, model_kwargs={"quantization_config": quantization_config})
+        for paths, aug_paths in tqdm(dataloader, desc="Generating prompts"): 
+            prompts = image2text_small_llava_gt(processor, list(paths), args.seed)
+            for p, prompt in zip(aug_paths, prompts):
+                write_txt(os.path.join(prompt_path,p)+ade_config.prompts_format, prompt)
+
 
 
     print(f"INFO:: Saved image prompts to {os.path.join(prompt_path,p,ade_config.prompts_format)}.")

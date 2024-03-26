@@ -93,6 +93,39 @@ def image2text_llava(processor, paths, seed = 42):
         prompts.extend(input_text)
     return prompts
 
+
+
+def image2text_small_llava_gt(processor, paths, seed = 42):
+    # image to text with llava
+    # torch.manual_seed(seed)
+    prompts = []
+    for path in paths: 
+        pil_image = Image.open(path)
+        
+        # use gt_prompts
+        mask = np.array(Image.open(f"{ade_config.data_path}{ade_config.annotations_folder}{Path(path).stem}{ade_config.annotations_format}"))
+        available_classes = np.unique(mask)
+        class_names = [ade_config.classes[i] for i in available_classes][1:]
+        gt_classes = ", ".join(class_names)
+
+        prompt1 = f"Can you describe the content of the photo using following words: '{gt_classes}'?"
+        prompt2 = f"Can you make your answer shorter?"
+        prompt3 = f"Can you make it even shorter?"
+
+        prompt = f"USER: <image>\n{prompt1}\nASSISTANT:"
+        outputs = processor(pil_image, prompt=prompt, generate_kwargs={"max_new_tokens": 250})
+        answer = [o["generated_text"].split("ASSISTANT: ")[1] for o in outputs]
+        
+        prompt = f"{prompt} {answer[0]} USER:{prompt2}\nASSISTANT:" 
+        outputs = processor(pil_image, prompt=prompt, generate_kwargs={"max_new_tokens": 150})
+        answer = [o["generated_text"].split("ASSISTANT: ")[2] for o in outputs]
+
+        prompt = f"{prompt} {answer[0]} USER:{prompt3}\nASSISTANT:" 
+        outputs = processor(pil_image, prompt=prompt, generate_kwargs={"max_new_tokens": 60})
+        answer = [o["generated_text"].split("ASSISTANT: ")[3] for o in outputs]
+        prompts.extend(answer)
+    return prompts
+
 def image2text_llava_gt(processor, paths, seed = 42):
     # image to text with llava
     # torch.manual_seed(seed)

@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0", "2.1"], default="1.1")
     parser.add_argument('--finetuned_checkpoint', type=str, default="")
-    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt"], default="gt")
+    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt", "short_llava_gt"], default="gt")
     parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches") # "low quality, bad quality, sketches, flat, unrealistic" 
     parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed") # , realistic looking, high-quality, extremely detailed, 4K, HQ, photorealistic" # , high-quality, extremely detailed, 4K, HQ
     parser.add_argument('--controlnet_conditioning_scale', type = float, default=1.0)
