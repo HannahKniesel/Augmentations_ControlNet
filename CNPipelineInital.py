@@ -919,6 +919,7 @@ class StableDiffusionControlNetPipeline(
                           generator
                           ):
         for i, t in enumerate(timesteps):
+            # latents.retain_grad()
             print(f"INFO::Step {i}/{len(timesteps)}")
             torch.cuda.empty_cache()
 
@@ -929,6 +930,9 @@ class StableDiffusionControlNetPipeline(
             # expand the latents if we are doing classifier free guidance
             latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
             latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+            
+            
+            
 
             if isinstance(controlnet_keep[i], list):
                 cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
@@ -940,7 +944,7 @@ class StableDiffusionControlNetPipeline(
 
 
             down_block_res_samples, mid_block_res_sample = self.controlnet(
-                latent_model_input,
+                latent_model_input, # latent_model_input,
                 t,
                 encoder_hidden_states=prompt_embeds,
                 controlnet_cond=image,
@@ -956,10 +960,9 @@ class StableDiffusionControlNetPipeline(
                 down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
                 mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
-
             # predict the noise residual
             noise_pred = self.unet(
-                latent_model_input,
+                latent_model_input, #latent_model_input,
                 t,
                 encoder_hidden_states=prompt_embeds,
                 timestep_cond=timestep_cond,
@@ -970,7 +973,7 @@ class StableDiffusionControlNetPipeline(
                 return_dict=False,
             )[0]
 
-            print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device} | latent_model_input = {latent_model_input.device} | U-Net = {self.unet.device}")
+            print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device}  | U-Net = {self.unet.device}")
 
             # perform guidance
             if self.do_classifier_free_guidance:
@@ -979,15 +982,21 @@ class StableDiffusionControlNetPipeline(
 
             # compute the previous noisy sample x_t -> x_t-1
             latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-
-        decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+        # print(f"VAE: {self.vae}")
+        # print(f"Bool: {self.vae.use_tiling and (latents.shape[-1] > self.vae.tile_latent_min_size or latents.shape[-2] > self.vae.tile_latent_min_size)}")
+        # print(f"VAE training mode: {self.vae.training}")
+        # print(latents.shape)
+        # latents = latents / self.vae.config.scaling_factor
+        # latents = self.vae.post_quant_conv(latents)
+        # decoded_image = self.vae.decoder(latents)
+        
+        decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
         decoded_image = self.image_processor.denormalize(decoded_image)
-        print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device} | latent_model_input = {latent_model_input.device} | U-Net = {self.unet.device}")
+        print(f"INFO:: noise_pred = {noise_pred.device} | latents = {latents.device} | U-Net = {self.unet.device}")
                     
         return decoded_image 
                 
 
-    @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
@@ -1274,18 +1283,45 @@ class StableDiffusionControlNetPipeline(
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
         self._num_timesteps = len(timesteps)
 
-        # 6. Prepare latent variables
-        num_channels_latents = self.unet.config.in_channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
+
+        # project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
+        accelerator = Accelerator(
+            gradient_accumulation_steps=1,
+            mixed_precision= "bf16", # "no", #"fp16", #
+            log_with=None,
+            project_config=None,
         )
+        weight_dtype = torch.bfloat16 #torch.float32 #torch.float16 #  mixed precision training
+
+        
+
+        # move text encoder to CPU as we won't need it for backpropagation TODO is this true?
+        self.text_encoder.to("cpu", dtype=weight_dtype)
+
+        self.vae.to(accelerator.device, dtype=weight_dtype)
+        self.unet.to(accelerator.device, dtype=weight_dtype)
+        self.controlnet.to(accelerator.device, dtype=weight_dtype)
+        # latents_init = latents_init.to(accelerator.device, dtype=weight_dtype)
+        prompt_embeds = prompt_embeds.to(accelerator.device, dtype=weight_dtype).detach()
+
+        # only require grads for latents 
+        self.vae.requires_grad_(False)
+        self.unet.requires_grad_(False)
+        self.text_encoder.requires_grad_(False)
+        self.controlnet.requires_grad_(False)
+        print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
+
+
+        # 6. Prepare latent variables for optimization
+        num_channels_latents = self.unet.config.in_channels
+        shape = (batch_size, num_channels_latents, height // self.vae_scale_factor, width // self.vae_scale_factor)
+        latents_init = torch.randn(shape, device=device, dtype = weight_dtype) #randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        # torch.nn.init.kaiming_normal_(latents_init)
+        # scale the initial noise by the standard deviation required by the scheduler
+        latents_init = latents_init * self.scheduler.init_noise_sigma # TODO remove when latents are optimized?!
+        latents_init.detach()
+        latents_init = latents_init.requires_grad_(True)
+        print(f"noise ste:{self.scheduler.init_noise_sigma}")
 
 
         # 6.5 Optionally get Guidance Scale Embedding
@@ -1318,144 +1354,181 @@ class StableDiffusionControlNetPipeline(
         is_torch_higher_equal_2_1 = is_torch_version(">=", "2.1")
 
         # TODO for backpropagation through time include: 
-        # project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
-        with torch.enable_grad():
-            accelerator = Accelerator(
-                gradient_accumulation_steps=1,
-                mixed_precision="bf16",
-                log_with=None,
-                project_config=None,
-            )
-            weight_dtype = torch.bfloat16 # toch.float16 # mixed precision training
+        
 
-            # only require grads for latents 
-            self.vae.requires_grad_(False)
-            self.unet.requires_grad_(False)
-            self.text_encoder.requires_grad_(False)
-            self.controlnet.requires_grad_(False)
-            latents.requires_grad_(True)
-            print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")
 
-            # move text encoder to CPU as we won't need it for backpropagation TODO is this true?
-            self.text_encoder.to("cpu", dtype=weight_dtype)
 
-            self.vae.to(accelerator.device, dtype=weight_dtype)
-            self.unet.to(accelerator.device, dtype=weight_dtype)
-            self.controlnet.to(accelerator.device, dtype=weight_dtype)
-            latents.to(accelerator.device, dtype=weight_dtype)
-            prompt_embeds.to(accelerator.device, dtype=weight_dtype)
+        print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
 
-            print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
-            print(f"INFO:: self.vae = {self.vae.device} | self.unet = {self.unet.device} | self.controlnet = {self.controlnet.device}")
+        # prepare optimizer for training
+        params_to_optimize = [latents_init] #self.controlnet.parameters() # [latents]
+        print(f"Latents type = {latents_init.dtype}")
+        optimizer = torch.optim.Adam(params_to_optimize, lr=optimization_arguments["lr"])
 
-            # prepare optimizer for training
-            params_to_optimize = [latents] #self.controlnet.parameters() # [latents]
-            optimizer = torch.optim.SGD(params_to_optimize, lr=optimization_arguments["lr"])
-            
-            # Prepare everything with our `accelerator`. TODO what about preparing the input data?
-            self.controlnet, optimizer = accelerator.prepare(self.controlnet, optimizer)
-            
-            start_time_image = time.time()
-
+        
+        # Prepare everything with our `accelerator`.
+        self.controlnet, optimizer = accelerator.prepare(self.controlnet, optimizer)
+        
+        start_time_image = time.time()
+        
+        with torch.cuda.amp.autocast():
+            loss_item = 0
+            # start optimization loop
             for iter in range(optimization_arguments["iters"]):
-                print(latents)
-                with torch.cuda.amp.autocast():
-                    decoded_image = self.backward_diffusion(latents, 
-                                    timesteps, 
-                                    is_unet_compiled, 
-                                    is_controlnet_compiled, 
-                                    is_torch_higher_equal_2_1,
-                                    guess_mode, 
-                                    controlnet_keep,
-                                    controlnet_conditioning_scale, 
-                                    image, 
-                                    prompt_embeds,
-                                    timestep_cond, 
-                                    added_cond_kwargs, 
-                                    extra_step_kwargs, 
-                                    generator)
-                    print(f"INFO:: decoded_image = {decoded_image.device} | real_image = {real_image.device}")
-                    print(f"INFO:: unet = {self.unet.device} | vae = {self.vae.device} | controlnet = {self.controlnet.device}")
-                    loss = optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
+                print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss_item}")
+                latents = latents_init * self.scheduler.init_noise_sigma # TODO remove when latents are optimized?!
 
+                # start backward diffusion
+                for i, t in enumerate(timesteps):
+                    print(f"\tINFO::Step {i}/{len(timesteps)}")
+                    # torch.cuda.empty_cache()
+
+                    # expand the latents if we are doing classifier free guidance
+                    latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+                    latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)                      
+
+                    if isinstance(controlnet_keep[i], list):
+                        cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                    else:
+                        controlnet_cond_scale = controlnet_conditioning_scale
+                        if isinstance(controlnet_cond_scale, list):
+                            controlnet_cond_scale = controlnet_cond_scale[0]
+                        cond_scale = controlnet_cond_scale * controlnet_keep[i]
+
+                    down_block_res_samples, mid_block_res_sample = self.controlnet(
+                        latent_model_input, # latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        controlnet_cond=image,
+                        conditioning_scale=cond_scale,
+                        guess_mode=guess_mode,
+                        return_dict=False,
+                    )
+
+                    if guess_mode and self.do_classifier_free_guidance:
+                        # Infered ControlNet only for the conditional batch.
+                        # To apply the output of ControlNet to both the unconditional and conditional batches,
+                        # add 0 to the unconditional batch to keep it unchanged.
+                        down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
+                        mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+
+                    # predict the noise residual
+                    noise_pred = self.unet(
+                        latent_model_input, #latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        down_block_additional_residuals=down_block_res_samples,
+                        mid_block_additional_residual=mid_block_res_sample,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
+
+                    # perform guidance
+                    if self.do_classifier_free_guidance:
+                        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                        noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                    # compute the previous noisy sample x_t -> x_t-1
+                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                
+                # TODO gradients seem to be vanishing within these two steps
+                # decoded_image = latents
+                decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
+                decoded_image = self.image_processor.denormalize(decoded_image) # TODO what does denormalize do?            
+                loss = torch.mean(decoded_image) #optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
+                    
                 self.unet.to("cuda", dtype=weight_dtype)
-                accelerator.backward(loss)
+                print(f"\tINFO:: self.vae = {self.vae.device} | self.unet = {self.unet.device} | self.controlnet = {self.controlnet.device} | latents = {latents.device}")
+                print(f"\tINFO:: loss device = {loss.device} loss item = {loss.item()}")
+
+                # latents.retain_grad()
+                accelerator.backward(loss) #, retain_graph = True)
+                # loss.backward(retain_graph = True)
+                grad_sum = torch.sum(latents_init.grad)
+                print(f"\tGradients Final Sum: {grad_sum}")
                 optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad() #set_to_none=True)
 
 
                 # reset scheduler
                 timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, None)             
                 # self.scheduler.set_begin_index()
 
-                print(f"INFO::Iter = {iter}/{optimization_arguments['iters']} Loss = {loss.item()}")
-
-                axis[iter].imshow(decoded_image.detach().cpu().float().numpy().squeeze().transpose(1,2,0))
-
                 loss_item = loss.item()
+                axis[iter].set_title(f"Loss = {loss_item:.2f} | Grads = {grad_sum:.2f}", fontsize = 24)
+                # decoded_image = self.vae.decode(decoded_image / self.vae.config.scaling_factor, return_dict=False)[0]
+                # decoded_image = self.image_processor.denormalize(decoded_image) # TODO what does denormalize do?   
+
+                vis_image = decoded_image.detach().cpu().float().numpy().squeeze().transpose(1,2,0)
+                # maximum = np.max(vis_image)
+                # minimum = np.min(vis_image)
+                # vis_image = (vis_image-maximum)/(minimum-maximum)
+                axis[iter].imshow(vis_image)
+
                 # Free GPU memory
                 del decoded_image
                 del loss
                 torch.cuda.empty_cache()
+                print("")
 
+        with torch.no_grad():
+            # If we do sequential model offloading, let's offload unet and controlnet
+            # manually for max memory savings
+            if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
+                self.unet.to("cpu")
+                self.controlnet.to("cpu")
+                torch.cuda.empty_cache()
 
-        # If we do sequential model offloading, let's offload unet and controlnet
-        # manually for max memory savings
-        if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
-            self.unet.to("cpu")
-            self.controlnet.to("cpu")
-            torch.cuda.empty_cache()
+            if not output_type == "latent":
+                # weight_dtype = torch.bfloat16
+                latents = latents.to(accelerator.device, dtype=weight_dtype)
 
-        if not output_type == "latent":
-            print(latents)
+                print(f"INFO::latents = {latents.dtype}")
 
-            # weight_dtype = torch.bfloat16
-            latents = latents.to(accelerator.device, dtype=weight_dtype)
-
-            print(f"INFO::latents = {latents.dtype}")
-
-            image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
-                0
-            ]
-            image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
-        else:
-            image = latents
-            has_nsfw_concept = None
-
-        if has_nsfw_concept is None:
-            do_denormalize = [True] * image.shape[0]
-        else:
-            do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
-
-        image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
-
-        # Offload all models
-        self.maybe_free_model_hooks()
-
-        if not return_dict:
-            return (image, has_nsfw_concept)
-        
-        end_time_image = time.time()
-        elapsed_time = end_time_image - start_time_image # elapsed time in seconds
-
-        title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss_item}"
-        for k in optimization_arguments.keys(): 
-            title += f"\n{k}: {optimization_arguments[k]}"
-
-        if(optimization_arguments['visualize']):
-            plt.suptitle(title, fontsize=24)
-            plt.tight_layout()
-            plt.subplots_adjust(hspace=0.4)
-            # plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
-
-            if(optimization_arguments["log_to_wandb"]):
-                wandb.log({f"Images": wandb.Image(plt)}) # TODO 
+                # image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                image = self.image_processor.denormalize(image)
+                image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
             else:
-                plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
-            plt.close()
+                image = latents
+                has_nsfw_concept = None
+
+            if has_nsfw_concept is None:
+                do_denormalize = [True] * image.shape[0]
+            else:
+                do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
+
+            image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
+
+            # Offload all models
+            self.maybe_free_model_hooks()
+
+            if not return_dict:
+                return (image, has_nsfw_concept)
+            
+            end_time_image = time.time()
+            elapsed_time = end_time_image - start_time_image # elapsed time in seconds
+
+            title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss_item}"
+            for k in optimization_arguments.keys(): 
+                title += f"\n{k}: {optimization_arguments[k]}"
+
+            if(optimization_arguments['visualize']):
+                plt.suptitle(title, fontsize=24)
+                plt.tight_layout()
+                plt.subplots_adjust(hspace=0.4)
+                # plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
+
+                if(optimization_arguments["log_to_wandb"]):
+                    wandb.log({f"Images": wandb.Image(plt)}) # TODO 
+                else:
+                    plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
+                plt.close()
 
 
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss_item
+            return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss_item
 
 
 
