@@ -1370,6 +1370,10 @@ class StableDiffusionControlNetPipeline(
         self.controlnet, optimizer = accelerator.prepare(self.controlnet, optimizer)
         
         start_time_image = time.time()
+
+        labels = []
+        gradients_mean = []
+        gradients_std = []
         
         with torch.cuda.amp.autocast():
             loss_item = 0
@@ -1394,6 +1398,7 @@ class StableDiffusionControlNetPipeline(
                         if isinstance(controlnet_cond_scale, list):
                             controlnet_cond_scale = controlnet_cond_scale[0]
                         cond_scale = controlnet_cond_scale * controlnet_keep[i]
+
 
                     down_block_res_samples, mid_block_res_sample = self.controlnet(
                         latent_model_input, # latent_model_input,
@@ -1432,22 +1437,68 @@ class StableDiffusionControlNetPipeline(
 
                     # compute the previous noisy sample x_t -> x_t-1
                     latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-                
+
+                     # Perform backward pass to compute gradients
+                    torch.mean(latents).backward(retain_graph = True) 
+                    labels.append(f"t = {i}")
+                    gradients_mean.append(latents_init.grad.to(torch.float32).mean().detach().cpu().numpy())
+                    gradients_std.append(latents_init.grad.to(torch.float32).std().detach().cpu().numpy())
+                    latents_init.grad = None
+
+
+
                 # TODO gradients seem to be vanishing within these two steps
                 # decoded_image = latents
                 decoded_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
-                decoded_image = self.image_processor.denormalize(decoded_image) # TODO what does denormalize do?            
+
+                 # Perform backward pass to compute gradients
+                torch.mean(decoded_image).backward(retain_graph = True) 
+                labels.append(f"VAE Decode")
+                gradients_mean.append(latents_init.grad.to(torch.float32).mean().detach().cpu().numpy())
+                gradients_std.append(latents_init.grad.to(torch.float32).std().detach().cpu().numpy())
+                latents_init.grad = None
+
+                decoded_image = self.image_processor.denormalize(decoded_image) # TODO what does denormalize do?        
+
+                 # Perform backward pass to compute gradients
+                torch.mean(decoded_image).backward(retain_graph = True) 
+                labels.append(f"Denormalize")
+                gradients_mean.append(latents_init.grad.to(torch.float32).mean().detach().cpu().numpy())
+                gradients_std.append(latents_init.grad.to(torch.float32).std().detach().cpu().numpy())
+                latents_init.grad = None
+
+                if(iter == (optimization_arguments["iters"])-1):
+                    # Create the bar plot
+                    plt.figure()
+                    plt.bar(range(len(labels)), gradients_mean, yerr=gradients_std, capsize=5)
+
+                    # Customize the x-axis labels
+                    plt.xticks(range(len(labels)), labels, rotation=90)
+                    plt.ylim([-0.0012, 0.0012])
+
+                    # Add labels and title
+                    plt.ylabel('Gradients')
+                    plt.title(f'{img_name} with {iter+1} iters and {i} timesteps')
+                    plt.tight_layout()
+
+                    if(optimization_arguments["log_to_wandb"]):
+                        wandb.log({f"Gradients": wandb.Image(plt)}) # TODO 
+                    
+                    plt.close()
+
+
                 loss = torch.mean(decoded_image) #optimization_arguments["loss"](decoded_image, real_image.to("cuda"), seg_model)
+                # wandb.watch(latents_init, log="gradients")
                     
                 self.unet.to("cuda", dtype=weight_dtype)
                 print(f"\tINFO:: self.vae = {self.vae.device} | self.unet = {self.unet.device} | self.controlnet = {self.controlnet.device} | latents = {latents.device}")
                 print(f"\tINFO:: loss device = {loss.device} loss item = {loss.item()}")
 
                 # latents.retain_grad()
-                accelerator.backward(loss) #, retain_graph = True)
+                accelerator.backward(loss, retain_graph = True)
                 # loss.backward(retain_graph = True)
                 grad_sum = torch.sum(latents_init.grad)
-                print(f"\tGradients Final Sum: {grad_sum}")
+                print(f"\tGradients Final Sum: {grad_sum} | Gradients shape: {latents_init.grad.shape} | Latents shape: {latents_init.shape}")
                 optimizer.step()
                 optimizer.zero_grad() #set_to_none=True)
 
