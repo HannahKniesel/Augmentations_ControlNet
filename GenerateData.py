@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0", "2.1"], default="1.1")
     parser.add_argument('--finetuned_checkpoint', type=str, default="")
-    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt", "short_llava_gt"], default="gt")
+    parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt", "short_llava_gt", "no_prompts"], default="gt")
     parser.add_argument('--negative_prompt', type=str, default="low quality, bad quality, sketches") # "low quality, bad quality, sketches, flat, unrealistic" 
     parser.add_argument('--additional_prompt', type=str, default=", realistic looking, high-quality, extremely detailed") # , realistic looking, high-quality, extremely detailed, 4K, HQ, photorealistic" # , high-quality, extremely detailed, 4K, HQ
     parser.add_argument('--controlnet_conditioning_scale', type = float, default=1.0)
@@ -95,6 +95,13 @@ if __name__ == "__main__":
         vis_path = f"./Visualizations/Optim/{args.wandb_project}/lr-{args.lr}_i-{args.iters}_everyn-{args.optim_every_n_steps}_loss-{args.loss}/"
     else: 
         vis_path = ""
+
+    if(args.prompt_type == "no_prompts"):
+        args.additional_prompt = ""
+        args.negative_prompt = ""
+        guess_mode = True
+    else: 
+        guess_mode = False
 
     optimization_params = {"do_optimize": args.optimize, 
                            "optimization_target": args.optimization_target,
@@ -201,6 +208,7 @@ if __name__ == "__main__":
                                     controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
                                     guidance_scale = args.guidance_scale,
                                     num_inference_steps=args.inference_steps, 
+                                    guess_mode = guess_mode,
                                     height = condition.shape[-2], 
                                     width = condition.shape[-1],
                                     num_images_per_prompt = 1, 

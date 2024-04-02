@@ -32,6 +32,7 @@ class AbstractAde20k(TorchDataset):
             data_paths = data_paths[start_idx:]
             start_idx = start_idx
         self.annotations_dir = ade_config.data_path+ade_config.annotations_folder
+        self.prompt_type = prompt_type
         self.prompts_dir = ade_config.data_path+ade_config.prompts_folder
         self.prompts_dir = f"{self.prompts_dir}/{prompt_type}/" # set prompt dir based on prompt_type
         self.data_paths = data_paths
@@ -69,11 +70,14 @@ class Ade20kDataset(AbstractAde20k):
         if(len(init_image.shape) != 3):
             init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
         
-        # open prompt
-        try:
-            prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+ade_config.prompts_format)[0]
-        except: 
+        if(self.prompt_type == "no_prompts"):
             prompt = ""
+        else:
+            # open prompt
+            try:
+                prompt = read_txt(self.prompts_dir+Path(path).stem+"_0000"+ade_config.prompts_format)[0]
+            except: 
+                prompt = ""
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)
