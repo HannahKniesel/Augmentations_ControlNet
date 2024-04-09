@@ -45,10 +45,16 @@ from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
+# from diffusers import UniPCMultistepScheduler
+from Scheduler import UniPCMultistepScheduler
+
 
 from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMixin, TextualInversionLoaderMixin
 
-BASIC_VIS_STEPS = 20
+import cv2
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+BASIC_VIS_STEPS = 10 #20
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -928,10 +934,12 @@ class StableDiffusionControlNetPipeline(
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-        optimization_arguments: Dict[str, Any] = {"do_optimize": False, "visualize": "", "log_to_wandb": False, "lr": 1000., "iters": 1, "loss": None, "optim_every_n_steps": 1, "start_t": 0, "end_t": 40},
+        optimization_arguments: Dict[str, Any] = {"do_optimize": False, "wandb_mode": "off", "lr": 1000., "iters": 1, "loss": None, "optim_every_n_steps": 1, "start_t": 0, "end_t": 40},
         seg_model: Callable = None,
         img_name: str = "",
         real_image: torch.FloatTensor = None, 
+        annotation: torch.FloatTensor = None, 
+
         **kwargs,
     ):
         r"""
@@ -1022,7 +1030,7 @@ class StableDiffusionControlNetPipeline(
 
             optimization_arguments: Dict[str, Any]: 
                 Parameters for latent space optimization. Should include values for: 
-                {"do_optimize": bool, "visualize": str, "log_to_wandb": bool, "lr": float, "iters": int, "loss": Callable, "optim_every_n_steps": int}, 
+                {"do_optimize": bool, "wandb_mode": str, "lr": float, "iters": int, "loss": Callable, "optim_every_n_steps": int}, 
             img_name: str:
                 File name where to save visualizations to 
 
@@ -1054,15 +1062,17 @@ class StableDiffusionControlNetPipeline(
 
         controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
 
-        if(optimization_arguments['visualize']):
-            optimization_arguments['visualize'] = os.path.join(optimization_arguments['visualize'], datetime.now().strftime('%d-%m-%Y_%H-%M-%S'), img_name)
-            os.makedirs(optimization_arguments['visualize'], exist_ok = True)
+        if(optimization_arguments['wandb_mode'] == "detailed"):
             # make figure for visualization
             VIS_STEPS = np.min((num_inference_steps//2, BASIC_VIS_STEPS))
             s = 7
-            fig,axis = plt.subplots(1, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
-            # axis[0,0].set_ylabel("Before Optimization", fontsize=24)
-            # axis[1,0].set_ylabel("After Optimization", fontsize=24)
+            if(optimization_arguments['do_optimize']):
+                fig,axis = plt.subplots(2, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
+                axis[0,0].set_ylabel("Denoising", fontsize=24)
+                axis[1,0].set_ylabel("Single Denoising Step", fontsize=24)
+            else: 
+                fig,axis = plt.subplots(1, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
+            
 
 
         # align format for control guidance
@@ -1141,6 +1151,8 @@ class StableDiffusionControlNetPipeline(
                 ip_adapter_image, device, batch_size * num_images_per_prompt
             )
 
+        gt_mask = image.clone().cpu()
+
         # 4. Prepare image
         if isinstance(controlnet, ControlNetModel):
             image = self.prepare_image(
@@ -1185,6 +1197,8 @@ class StableDiffusionControlNetPipeline(
 
         # 5. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
+        print(f"Prepared Timesteps: {timesteps}, Inference Steps: {num_inference_steps}")
+
         self._num_timesteps = len(timesteps)
 
         # 6. Prepare latent variables
@@ -1310,34 +1324,144 @@ class StableDiffusionControlNetPipeline(
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-
-                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i > optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
+                # print(f"Scheduler: {self.scheduler}")
+                
+                final_image = None
+                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
                     # START OPTIMIZATION 
                     with torch.enable_grad():
-                        latents = Variable(latents.data, requires_grad=True)
-                        optimizer = torch.optim.SGD([latents], lr=optimization_arguments["lr"])
+                        # define scheduler for projection to image space (single step denoising)
+                        scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
+                        optim_timesteps = timesteps[:i]
+                        scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
+                        # print(f"set_timesteps to {optim_timesteps}")
+                        
+                        latents_optim = latents.clone().requires_grad_(True)
+                        optimizer = torch.optim.SGD([latents_optim], lr=optimization_arguments["lr"])
                         losses = []
                         for iters in range(optimization_arguments["iters"]):
-                            save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                            save_image = self.image_processor.denormalize(save_image)
-                            # loss = optimization_arguments["loss"](latents)
-                            # TODO on cluster change to 
-                            loss = optimization_arguments["loss"](save_image, real_image, seg_model)
+
+                            # START PROJECTION TO IMAGE SPACE: Denoise within a single step
+                            scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
+                            scheduler_optim.set_begin_index(i-1)
+                            # print(f"Set begin index to {i-1}")
+
+                            # Relevant thread:
+                            # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
+                            if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
+                                torch._inductor.cudagraph_mark_step_begin()
+                            # expand the latents if we are doing classifier free guidance
+                            latent_model_input = torch.cat([latents_optim] * 2) if self.do_classifier_free_guidance else latents_optim
+                            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+                            # controlnet(s) inference
+                            if guess_mode and self.do_classifier_free_guidance:
+                                # Infer ControlNet only for the conditional batch.
+                                control_model_input = latents_optim
+                                control_model_input = self.scheduler.scale_model_input(control_model_input, t)
+                                controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
+                            else:
+                                control_model_input = latent_model_input
+                                controlnet_prompt_embeds = prompt_embeds
+
+                            if isinstance(controlnet_keep[i], list):
+                                cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                            else:
+                                controlnet_cond_scale = controlnet_conditioning_scale
+                                if isinstance(controlnet_cond_scale, list):
+                                    controlnet_cond_scale = controlnet_cond_scale[0]
+                                cond_scale = controlnet_cond_scale * controlnet_keep[i]
+
+                            down_block_res_samples, mid_block_res_sample = self.controlnet(
+                                control_model_input,
+                                t, # number of timesteps to denoise
+                                encoder_hidden_states=controlnet_prompt_embeds,
+                                controlnet_cond=image,
+                                conditioning_scale=cond_scale,
+                                guess_mode=guess_mode,
+                                return_dict=False,
+                            )
+
+                            if guess_mode and self.do_classifier_free_guidance:
+                                # Infered ControlNet only for the conditional batch.
+                                # To apply the output of ControlNet to both the unconditional and conditional batches,
+                                # add 0 to the unconditional batch to keep it unchanged.
+                                down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
+                                mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+
+                            # predict the noise residual
+                            noise_pred = self.unet(
+                                latent_model_input,
+                                t, # number of timesteps to denoise
+                                encoder_hidden_states=prompt_embeds,
+                                timestep_cond=timestep_cond,
+                                cross_attention_kwargs=self.cross_attention_kwargs,
+                                down_block_additional_residuals=down_block_res_samples,
+                                mid_block_additional_residual=mid_block_res_sample,
+                                added_cond_kwargs=added_cond_kwargs,
+                                return_dict=False,
+                            )[0]
+
+                            # perform guidance
+                            if self.do_classifier_free_guidance:
+                                noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                                noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                            # compute the previous noisy sample x_t -> x_t-1
+                            final_latents = scheduler_optim.step(noise_pred, 
+                                                                t, # current time step 
+                                                                latents_optim, 
+                                                                **extra_step_kwargs, return_dict=False)[0]
+                            # END PROJECTION TO IMAGE SPACE
+
+                            final_image = self.vae.decode(final_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                            final_image = self.image_processor.denormalize(final_image)
+                            
+
+                            # TODO why do I need to put unet to cuda again? 
+                            self.unet.to("cuda")
+                            loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model)
                             loss.backward()
+                            
+                            if(optimization_arguments["wandb_mode"] == "debug"): #"detailed"):
+                                wandb.log({f"Loss_{i}/{img_name}": loss.item()})
+                                wandb.log({"Gradients/Histogram": wandb.Histogram(latents_optim.grad.cpu())})
+                                wandb.log({"Gradients/Mean": torch.mean(latents_optim.grad).cpu()})
+
+
                             optimizer.step()
-                            optimizer.zero_grad() 
+                            optimizer.zero_grad()
+                        
+                        # update latents with optimized latents
+                        latents = latents_optim.detach()
+                        del latents_optim
 
-                            """if(optimization_arguments["log_to_wandb"]):
-                                wandb.log({"Loss": loss.item()})"""
+                            
 
 
 
-                if(optimization_arguments["visualize"] and ((i % VIS_STEPS) == 0)):
+                if((optimization_arguments["wandb_mode"] == "detailed") and ((((i-1) % VIS_STEPS) == 0) or (i == (num_inference_steps-1)))):
+                    if(i == (num_inference_steps-1)):
+                        vis_idx = -1
+                    else: 
+                        vis_idx = (i-1)//VIS_STEPS
                     # decode optimized latents for visualization
                     save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                     save_image = self.image_processor.denormalize(save_image)
-                    axis[i//VIS_STEPS].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                    axis[i//VIS_STEPS].set_title(f"t = {i}", fontsize=24)
+                    if(optimization_arguments['do_optimize']):
+                        show_image = save_image[0].cpu().squeeze().permute(1,2,0)
+                        axis[0,vis_idx].imshow(show_image)
+                        axis[0,vis_idx].set_title(f"t = {i}", fontsize=24)
+
+                        if(final_image is None):
+                            final_image = np.ones_like(show_image)
+                        else: 
+                            final_image = final_image[0].cpu().squeeze().permute(1,2,0)
+                        axis[1,vis_idx].imshow(final_image)
+
+                    else:
+                        axis[vis_idx].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                        axis[vis_idx].set_title(f"t = {i}", fontsize=24)
 
 
                     # plt.figure()
@@ -1406,24 +1530,61 @@ class StableDiffusionControlNetPipeline(
         # log final loss on image
         loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
         loss_image = self.image_processor.denormalize(loss_image)
-        # axis[0, i//VIS_STEPS].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
-        if(optimization_arguments['visualize']):
-            axis[-1].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
 
-        loss = optimization_arguments["loss"](loss_image, real_image, seg_model)
+        # axis[0, i//VIS_STEPS].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
+        # if(optimization_arguments['visualize']):
+            # axis[-1].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
+
+        loss, uncertainty_img = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, visualize = (optimization_arguments['wandb_mode'] == "detailed"))
+        loss_image = loss_image[0].cpu().squeeze().permute(1,2,0)
+
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
         for k in optimization_arguments.keys(): 
             title += f"\n{k}: {optimization_arguments[k]}"
 
-        if(optimization_arguments['visualize']):
+        if(optimization_arguments['wandb_mode'] == "detailed"):
             plt.suptitle(title, fontsize=24)
             plt.tight_layout()
             plt.subplots_adjust(hspace=0.4)
-            if(optimization_arguments["log_to_wandb"]):
-                wandb.log({f"Images": wandb.Image(plt)}) # TODO 
-            else:
-                plt.savefig(f"{optimization_arguments['visualize']}/{img_name}.jpg")
+            wandb.log({f"Images": wandb.Image(plt)}) # TODO 
+            plt.close()
+
+            print(f"Shape uncertainty image: {uncertainty_img.shape}")
+            s = 5
+            fig, axis = plt.subplots(4, 1, figsize=(2*s, 4*s))
+            classes = ", ".join(prompt.split(",")[:-3])
+            plt.suptitle(f"Loss = {loss.item()}", fontsize=20)
+            axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
+            axis[0].imshow(gt_mask[0].permute(1,2,0))
+            axis[1].set_title(f"Overlay")
+            loss_image_small = cv2.resize(loss_image.numpy(), dsize=uncertainty_img.squeeze().shape[::-1], interpolation=cv2.INTER_CUBIC)
+            axis[1].imshow(loss_image_small, alpha = 1.0)
+            axis[1].imshow(uncertainty_img.squeeze(), alpha = 0.5, cmap="rainbow")
+
+            axis[2].set_title("Generated Image")
+            axis[2].imshow(loss_image)
+            
+            axis[3].set_title("Uncertainty Heatmap")
+            im = axis[3].imshow(uncertainty_img.squeeze(), cmap="rainbow")
+            for ax in axis: 
+                ax.set_axis_off()
+
+            axins = inset_axes(axis[3],
+                    width="100%",  
+                    height="5%",
+                    loc='lower center',
+                    borderpad=-10
+                   )
+            cbar = fig.colorbar(im, cax=axins, orientation="horizontal", ticks=[uncertainty_img.min(), uncertainty_img.max()])
+            cbar.ax.set_axis_on()
+            cbar.ax.tick_params(labelsize=20)
+            #
+            #cbar.ax.set_xticklabels([uncertainty_img.min(), uncertainty_img.max()])
+
+            
+            # plt.tight_layout()
+            wandb.log({f"Final Images": wandb.Image(plt)}) # TODO 
             plt.close()
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item()

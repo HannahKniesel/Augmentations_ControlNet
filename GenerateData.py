@@ -20,7 +20,7 @@ from CNPipeline import StableDiffusionControlNetPipeline as SDCNPipeline_Latents
 from CNPipelineInital import StableDiffusionControlNetPipeline as SDCNPipeline_Init
 from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, mse_loss
 
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, mse_loss
+from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss
 
 
 # TODO load dotenv
@@ -68,15 +68,15 @@ if __name__ == "__main__":
     # optimization parameters
     parser.add_argument('--optimize', action='store_true')
     parser.add_argument('--optimization_target', type=str, choices = ["latents", "initial"], default="latents")
+    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed"], default = "standard")
     parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--lr', type=float, default=1000.)
     parser.add_argument('--iters', type=int, default=1)
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
-    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "mse"], default="brightness")
-    parser.add_argument('--visualize_optim', action='store_true')
-    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/train_model_scripted.pt")
+    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse"], default="mcdropout")
+    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
 
 
     args = parser.parse_args()
@@ -84,17 +84,26 @@ if __name__ == "__main__":
 
     if(args.loss == "brightness"):
         loss = loss_brightness
+        args.model_path = args.model_path + "eval_model_scripted.pt"
     elif(args.loss == "entropy"):
         loss = entropy_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"
     elif(args.loss == "mcdropout"):
         loss = mcdropout_loss
+        args.model_path = args.model_path + "train_model_scripted.pt"
+    elif(args.loss == "smu"):
+        loss = smu_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"
+    elif(args.loss == "lmu"):
+        loss = lmu_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"
+    elif(args.loss == "lcu"):
+        loss = lcu_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"    
     elif(args.loss == "mse"):
         loss = mse_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"
 
-    if(args.visualize_optim): 
-        vis_path = f"./Visualizations/Optim/{args.wandb_project}/lr-{args.lr}_i-{args.iters}_everyn-{args.optim_every_n_steps}_loss-{args.loss}/"
-    else: 
-        vis_path = ""
 
     if(args.prompt_type == "no_prompts"):
         args.additional_prompt = ""
@@ -105,8 +114,7 @@ if __name__ == "__main__":
 
     optimization_params = {"do_optimize": args.optimize, 
                            "optimization_target": args.optimization_target,
-                            "visualize": vis_path,
-                            "log_to_wandb": bool(args.wandb_project), 
+                            "wandb_mode": args.wandb_mode, 
                             "lr": args.lr, 
                             "iters": args.iters, 
                             "optim_every_n_steps": args.optim_every_n_steps,
@@ -114,13 +122,18 @@ if __name__ == "__main__":
                             "end_t": args.end_t,
                             "loss": loss}
 
-    if(optimization_params["log_to_wandb"]):
+    if(bool(args.wandb_mode in ["standard", "detailed"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
-        group = "Optimization" if optimization_params['do_optimize'] else "Base"
+        """group = "Optimization" if optimization_params['do_optimize'] else "Base"
+        if  optimization_params['do_optimize']: """
+        group = args.loss
         wandb.init(config = optimization_params, reinit=True, group = group, mode="online")
         # wandb_name = self.wandb_name+"_"+str(wandb.run.id)
-        wandb.run.name = f"{args.experiment_name}_{wandb.run.id}"
-
+        name = f"{args.experiment_name}_{args.loss}_{wandb.run.id}"
+        if(args.optimize):
+            name = f"{name}_optim"
+        
+        wandb.run.name = name
     start_time = time.time()
 
     ade_config.save_path = ade_config.save_path+"/"+args.experiment_name+"/"
@@ -216,7 +229,8 @@ if __name__ == "__main__":
                                     img_name = Path(path[0]).stem,
                                     optimization_arguments = optimization_params, 
                                     seg_model = seg_model, 
-                                    real_image = init_img
+                                    real_image = init_img, 
+                                    annotation = annotation,
                                     )
 
             #try:
@@ -258,7 +272,7 @@ if __name__ == "__main__":
               Remaining time = {remainingtime_img_str} | \
               {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW")
         
-        if(optimization_params["log_to_wandb"]):
+        if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
                     "AvgTime Augmentation": np.mean(mean_time_augmentation)})
 
@@ -267,6 +281,9 @@ if __name__ == "__main__":
     elapsedtime_str = str(timedelta(seconds=elapsedtime))
     print(f"Time to generate {args.num_augmentations} augmentations for {len(dataset)} images was {elapsedtime_str}")
     print(f"Average loss over dataset is {np.mean(avg_loss)}.")
+    if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
+        wandb.log({"Dataset Loss": np.mean(avg_loss), 
+                    "Final Time Avg" : np.mean(mean_time_augmentation)})
 
 
 
