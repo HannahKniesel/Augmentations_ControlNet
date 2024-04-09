@@ -14,6 +14,8 @@ from Datasets import SyntheticAde20kDataset
 from Utils import device
 from Uncertainties import mcdropout_loss, entropy_loss, lcu_loss, lmu_loss, smu_loss
 
+# Log number of black images 
+
 
 if __name__ == "__main__":
 
@@ -27,13 +29,21 @@ if __name__ == "__main__":
     # General Parameters
     parser.add_argument('--experiment_name', type = str, default="")
     parser.add_argument('--wandb_project', type=str, default="")
-    parser.add_argument('--uncertainty', type=str, nargs="+", choices=["entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["entropy"])
+    parser.add_argument('--uncertainty', type=str, nargs="+", choices=["entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["mc_dropout"])
     parser.add_argument('--data_path', type=str, default="./data/ade_augmented/finetuned_cn10/") 
-    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/train_model_scripted.pt")
+    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
 
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
+
+    if("mc_dropout" in args.uncertainty):
+        args.model_path = args.model_path + "/train_model_scripted.pt"
+        print("WARNING:: MCDropout uncertainty detected. Open model in train mode.")
+    else: 
+        args.model_path = args.model_path + "/eval_model_scripted.pt"
+        print("INFO::Open model in eval mode.")
+
 
     seg_model_name = Path(args.model_path).parent.parent.stem
 
@@ -47,6 +57,9 @@ if __name__ == "__main__":
 
     dataset = SyntheticAde20kDataset(args.data_path)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
+
+    
+
 
     seg_model = torch.jit.load(args.model_path)
     seg_model = seg_model.to(device)
@@ -75,40 +88,42 @@ if __name__ == "__main__":
         print(f"INFO::Could not find logged uncertainties at {args.data_path}/uncertainties.txt. Hence make new file.")
         results = {seg_model_name : {}}
     
-
+    black_img_counter = 0
     with torch.no_grad():
         for init_image, condition, annotation, prompt, path in tqdm(dataloader):
+            if(init_image.max() == init_image.min()):
+                black_img_counter += 1
             init_image = init_image.to(device)
             if("mc_dropout" in args.uncertainty):
-                mc_dropout = float(mcdropout_loss(init_image, seg_model, mc_samples = 5).cpu())
+                mc_dropout = float(mcdropout_loss(init_image, None, None, seg_model, mc_samples = 5)[0].cpu())  #generated_image, real_images, gt_mask, model, mc_samples = 5, visualize = False
                 try: 
                     results[seg_model_name]["mc_dropout"].append(mc_dropout)
                 except: 
                     results[seg_model_name]["mc_dropout"] = [mc_dropout]
 
             if("entropy" in args.uncertainty):
-                entropy = float(entropy_loss(init_image, seg_model).cpu())    
+                entropy = float(entropy_loss(init_image, None, seg_model)[0].cpu())    # generated_image, real_images, model,
                 try: 
                     results[seg_model_name]["entropy"].append(entropy)
                 except: 
                     results[seg_model_name]["entropy"] = [entropy]
 
             if("lcu" in args.uncertainty):
-                lcu = float(lcu_loss(init_image, seg_model).cpu())  
+                lcu = float(lcu_loss(init_image, None, seg_model)[0].cpu())  
                 try: 
                     results[seg_model_name]["lcu"].append(lcu)
                 except: 
                     results[seg_model_name]["lcu"] = [lcu]
 
             if("lmu" in args.uncertainty):
-                lmu = float(lmu_loss(init_image, seg_model).cpu())
+                lmu = float(lmu_loss(init_image, None, seg_model)[0].cpu())
                 try: 
                     results[seg_model_name]["lmu"].append(lmu)
                 except: 
                     results[seg_model_name]["lmu"] = [lmu]
             
             if("smu" in args.uncertainty):
-                smu = float(smu_loss(init_image, seg_model).cpu())
+                smu = float(smu_loss(init_image, None, seg_model)[0].cpu())
                 try: 
                     results[seg_model_name]["smu"].append(smu)
                 except: 
@@ -124,7 +139,9 @@ if __name__ == "__main__":
         if(args.wandb_project != ""):
             wandb.log({f"{key}_Mean" : mean_val})
             wandb.log({f"{key}_Std" : std_val})
-
+    
+    results["black_images"] = black_img_counter
+    results["black_images_percent"] = int(100*black_img_counter/len(dataloader))
 
     # save args parameter to json 
     # Could be loaded with: 
@@ -133,6 +150,8 @@ if __name__ == "__main__":
     with open(args.data_path +'/uncertainties.txt', 'w') as f:
         json.dump(results, f, indent=2)
 
+    print(results)
+    print(f"INFO::Save results to {args.data_path}/uncertainties.txt")
 
     
 
