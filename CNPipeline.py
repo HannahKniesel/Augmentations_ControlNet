@@ -1366,7 +1366,7 @@ class StableDiffusionControlNetPipeline(
                             elif(optimization_arguments["optimizer"] == "adam"):
                                 optimizer = torch.optim.Adam([latents_optim], lr=optimization_arguments["lr"])
                             else: 
-                                print(f"ERROR::optimizer {optimization_arguments["optimizer"]} not implemented.")
+                                print(f"ERROR::optimizer {optimization_arguments['optimizer']} not implemented.")
                                 return
                             # optimizer = accelerator.prepare(optimizer)
 
