@@ -162,6 +162,7 @@ if __name__ == "__main__":
     parser.add_argument('--crop', action='store_true')
 
 
+
     parser.add_argument('--prompts', type=str, choices=["gt", "blip2", "llava", "llava_gt"], default="gt")
 
     

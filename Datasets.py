@@ -55,20 +55,24 @@ class Ade20kPromptDataset(AbstractAde20k):
         return self.data_paths[idx], self.aug_paths[idx]
 
 
+
+
+
 class Ade20kDataset(AbstractAde20k):
     def __init__(self, start_idx, end_idx, prompt_type, copy_data = True, seed = 42):
         super().__init__(start_idx, end_idx, prompt_type, seed)
         self.aspect_resize = resize_transform
         self.copy_data = copy_data
+        self.resized_counter = 0
 
 
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
         # open image
-        init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        init_image,_ = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
-            init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
+            init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0) # C, W, H
         
         if(self.prompt_type == "no_prompts"):
             prompt = ""
@@ -81,7 +85,8 @@ class Ade20kDataset(AbstractAde20k):
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)
-        annotation = self.aspect_resize(annotation)
+        annotation, resized = self.aspect_resize(annotation)
+        self.resized_counter += bool(resized)
         annotation = np.array(annotation)
 
         condition = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
@@ -89,7 +94,7 @@ class Ade20kDataset(AbstractAde20k):
 
         
         if(self.copy_data):
-            # copy annotation and init image (used during data generation)
+            # copy annotation and init image (used during data generation) to save real images
             name = get_name(path, 0)
             shutil.copy(annotation_path, ade_config.save_path+ade_config.annotations_folder+name+ade_config.annotations_format)
             shutil.copy(path, ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
@@ -115,7 +120,7 @@ class SyntheticAde20kDataset(TorchDataset):
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
         # open image
-        init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        init_image,_ = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
             init_image = np.stack([init_image,init_image,init_image], axis = 0).transpose(1,2,0)
@@ -123,15 +128,24 @@ class SyntheticAde20kDataset(TorchDataset):
         init_image = self.transform(init_image)
         
         # open prompt
-        prompt = read_txt(self.prompts_dir+"_".join(Path(path).stem.split("_")[:-1])+"_0000"+ade_config.prompts_format)[0]
+        try:
+            prompt = read_txt(self.prompts_dir+"_".join(Path(path).stem.split("_")[:-1])+"_0000"+ade_config.prompts_format)
+        except: 
+            prompt = read_txt(self.prompts_dir+str(Path(path).stem)+"_0000"+ade_config.prompts_format)
+
+        if(type(prompt) is list):
+            if(len(prompt)>0):
+                prompt = prompt[0]
+            else: 
+                prompt = ""
+
         
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)
-        annotation = self.aspect_resize(annotation)
+        annotation,_ = self.aspect_resize(annotation)
         annotation = np.array(annotation)
 
         condition = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
-        
        
         return init_image, condition, annotation, prompt, path

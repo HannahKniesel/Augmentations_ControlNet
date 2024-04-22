@@ -7,12 +7,14 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+import shutil
 
 from torch.utils.data import DataLoader
 
 from Datasets import SyntheticAde20kDataset
 from Utils import device
 from Uncertainties import mcdropout_loss, entropy_loss, lcu_loss, lmu_loss, smu_loss
+import ade_config
 
 # Log number of black images 
 
@@ -32,6 +34,8 @@ if __name__ == "__main__":
     parser.add_argument('--uncertainty', type=str, nargs="+", choices=["entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["mc_dropout"])
     parser.add_argument('--data_path', type=str, default="./data/ade_augmented/finetuned_cn10/") 
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
+    parser.add_argument('--remove_black_images', action='store_true')
+
 
 
     args = parser.parse_args()
@@ -57,9 +61,6 @@ if __name__ == "__main__":
 
     dataset = SyntheticAde20kDataset(args.data_path)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
-
-    
-
 
     seg_model = torch.jit.load(args.model_path)
     seg_model = seg_model.to(device)
@@ -87,12 +88,32 @@ if __name__ == "__main__":
     except:
         print(f"INFO::Could not find logged uncertainties at {args.data_path}/uncertainties.txt. Hence make new file.")
         results = {seg_model_name : {}}
+
+    if(args.remove_black_images):
+        black_images_path = f"{args.data_path}/{ade_config.images_folder.split("/")[:-1]}/black_images/"
+        black_annotations_path = f"{args.data_path}/{ade_config.annotations_folder.split("/")[:-1]}/black_images/"
+        os.makedirs(black_images_path, exist_ok = True)
+        os.makedirs(black_annotations_path, exist_ok = True)
+        print(f"INFO::Generate folder for black images at {black_images_path} and at {black_annotations_path}")
+
     
+    PRINT_STEP = 1000
     black_img_counter = 0
     with torch.no_grad():
-        for init_image, condition, annotation, prompt, path in tqdm(dataloader):
+        for idx, (init_image, condition, annotation, prompt, path) in enumerate(dataloader):
+            if((idx % PRINT_STEP) == 0): 
+                print(f"INFO:: Image {idx}/{len(dataloader)}")
             if(init_image.max() == init_image.min()):
                 black_img_counter += 1
+                if(args.remove_black_images):
+                    curr_img_path =  str(Path(path[0]).stem) + ade_config.images_format
+                    curr_ann_path =  str(Path(path[0]).stem) + ade_config.annotations_format
+                    print(f"INFO::Move black image from {args.data_path + ade_config.images_folder + curr_img_path} to {black_images_path + curr_img_path}")
+                    print(f"INFO::Move annotation from black image from {args.data_path + ade_config.annotations_folder + curr_ann_path} to {black_annotations_path + curr_ann_path}\n")
+                    shutil.move(args.data_path + ade_config.images_folder + curr_img_path, black_images_path + curr_img_path)
+                    shutil.move(args.data_path + ade_config.annotations_folder + curr_ann_path, black_annotations_path + curr_ann_path)
+                    
+
             init_image = init_image.to(device)
             if("mc_dropout" in args.uncertainty):
                 mc_dropout = float(mcdropout_loss(init_image, None, None, seg_model, mc_samples = 5)[0].cpu())  #generated_image, real_images, gt_mask, model, mc_samples = 5, visualize = False

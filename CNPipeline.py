@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from accelerate import Accelerator
 
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
@@ -1213,19 +1214,40 @@ class StableDiffusionControlNetPipeline(
             generator,
             latents,
         )
-
-        # don't train controlnet parameters
-        [param.requires_grad_(False) for param in self.controlnet.parameters()]
-        cn_param_with_grads = [param for param in self.controlnet.parameters() if param.requires_grad]
-        print(f"INFO::ControlNet number parameters that require grads is {len(cn_param_with_grads)}")
-
-        [param.requires_grad_(False) for param in self.vae.parameters()]
-        cn_param_with_grads = [param for param in self.vae.parameters() if param.requires_grad]
-        print(f"INFO::VAE number parameters that require grads is {len(cn_param_with_grads)}")
+        # prepare mixed precision for optimization
+        if(optimization_arguments["mixed_precision"] == "bf16"): 
+            weight_dtype = torch.bfloat16
+            enable_mp = True
+        elif(optimization_arguments["mixed_precision"] == "fp16"): 
+            weight_dtype = torch.float16
+            enable_mp = True
+        elif(optimization_arguments["mixed_precision"] == "no"): 
+            weight_dtype = torch.float32
+            enable_mp = False
         
-        # TODO for backpropagation through time include: 
-        # latents.requires_grad_(True)
-        # optimizer = torch.optim.SGD([latents], lr=0.1, momentum=0.9)
+        accelerator = Accelerator(
+            gradient_accumulation_steps=1,
+            mixed_precision= optimization_arguments["mixed_precision"],
+            log_with=None,
+            project_config=None,
+        )
+
+        # self.text_encoder.to("cpu", dtype=weight_dtype)
+        # self.vae.to(accelerator.device, dtype=weight_dtype)
+        # self.unet.to(accelerator.device, dtype=weight_dtype)
+        # self.controlnet.to(accelerator.device, dtype=weight_dtype)
+        # latents = latents.to(accelerator.device, dtype=weight_dtype)
+        # prompt_embeds = prompt_embeds.to(accelerator.device, dtype=weight_dtype).detach()
+
+        # only require grads for latents 
+        # seg_model.to(accelerator.device, dtype=weight_dtype)
+        self.vae.requires_grad_(False)
+        self.unet.requires_grad_(False)
+        self.text_encoder.requires_grad_(False)
+        self.controlnet.requires_grad_(False)
+        print("INFO:: No gradient computation for VAE, U-Net, Text Encoder, ControlNet")    
+
+
         
         # 6.5 Optionally get Guidance Scale Embedding
         timestep_cond = None
@@ -1258,239 +1280,241 @@ class StableDiffusionControlNetPipeline(
         
         start_time_image = time.time()
         with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
-                torch.cuda.empty_cache()
+            with torch.autocast(device_type='cuda', dtype=weight_dtype): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
 
-                # Relevant thread:
-                # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
-                if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
-                    torch._inductor.cudagraph_mark_step_begin()
-                # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                for i, t in enumerate(timesteps):
+                    torch.cuda.empty_cache()
 
-                # controlnet(s) inference
-                if guess_mode and self.do_classifier_free_guidance:
-                    # Infer ControlNet only for the conditional batch.
-                    control_model_input = latents
-                    control_model_input = self.scheduler.scale_model_input(control_model_input, t)
-                    controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
-                else:
-                    control_model_input = latent_model_input
-                    controlnet_prompt_embeds = prompt_embeds
+                    # Relevant thread:
+                    # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
+                    if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
+                        torch._inductor.cudagraph_mark_step_begin()
+                    # expand the latents if we are doing classifier free guidance
+                    latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+                    latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                if isinstance(controlnet_keep[i], list):
-                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
-                else:
-                    controlnet_cond_scale = controlnet_conditioning_scale
-                    if isinstance(controlnet_cond_scale, list):
-                        controlnet_cond_scale = controlnet_cond_scale[0]
-                    cond_scale = controlnet_cond_scale * controlnet_keep[i]
-
-                down_block_res_samples, mid_block_res_sample = self.controlnet(
-                    control_model_input,
-                    t,
-                    encoder_hidden_states=controlnet_prompt_embeds,
-                    controlnet_cond=image,
-                    conditioning_scale=cond_scale,
-                    guess_mode=guess_mode,
-                    return_dict=False,
-                )
-
-                if guess_mode and self.do_classifier_free_guidance:
-                    # Infered ControlNet only for the conditional batch.
-                    # To apply the output of ControlNet to both the unconditional and conditional batches,
-                    # add 0 to the unconditional batch to keep it unchanged.
-                    down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
-                    mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
-
-                # predict the noise residual
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
-
-                # perform guidance
-                if self.do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-
-                # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-                # print(f"Scheduler: {self.scheduler}")
-                
-                final_image = None
-                if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
-                    # START OPTIMIZATION 
-                    with torch.enable_grad():
-                        # define scheduler for projection to image space (single step denoising)
-                        scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
-                        optim_timesteps = timesteps[:i]
-                        scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
-                        # print(f"set_timesteps to {optim_timesteps}")
-                        
-                        latents_optim = latents.clone().requires_grad_(True)
-                        optimizer = torch.optim.SGD([latents_optim], lr=optimization_arguments["lr"])
-                        losses = []
-                        for iters in range(optimization_arguments["iters"]):
-
-                            # START PROJECTION TO IMAGE SPACE: Denoise within a single step
-                            scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
-                            scheduler_optim.set_begin_index(i-1)
-                            # print(f"Set begin index to {i-1}")
-
-                            # Relevant thread:
-                            # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
-                            if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
-                                torch._inductor.cudagraph_mark_step_begin()
-                            # expand the latents if we are doing classifier free guidance
-                            latent_model_input = torch.cat([latents_optim] * 2) if self.do_classifier_free_guidance else latents_optim
-                            latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-
-                            # controlnet(s) inference
-                            if guess_mode and self.do_classifier_free_guidance:
-                                # Infer ControlNet only for the conditional batch.
-                                control_model_input = latents_optim
-                                control_model_input = self.scheduler.scale_model_input(control_model_input, t)
-                                controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
-                            else:
-                                control_model_input = latent_model_input
-                                controlnet_prompt_embeds = prompt_embeds
-
-                            if isinstance(controlnet_keep[i], list):
-                                cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
-                            else:
-                                controlnet_cond_scale = controlnet_conditioning_scale
-                                if isinstance(controlnet_cond_scale, list):
-                                    controlnet_cond_scale = controlnet_cond_scale[0]
-                                cond_scale = controlnet_cond_scale * controlnet_keep[i]
-
-                            down_block_res_samples, mid_block_res_sample = self.controlnet(
-                                control_model_input,
-                                t, # number of timesteps to denoise
-                                encoder_hidden_states=controlnet_prompt_embeds,
-                                controlnet_cond=image,
-                                conditioning_scale=cond_scale,
-                                guess_mode=guess_mode,
-                                return_dict=False,
-                            )
-
-                            if guess_mode and self.do_classifier_free_guidance:
-                                # Infered ControlNet only for the conditional batch.
-                                # To apply the output of ControlNet to both the unconditional and conditional batches,
-                                # add 0 to the unconditional batch to keep it unchanged.
-                                down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
-                                mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
-
-                            # predict the noise residual
-                            noise_pred = self.unet(
-                                latent_model_input,
-                                t, # number of timesteps to denoise
-                                encoder_hidden_states=prompt_embeds,
-                                timestep_cond=timestep_cond,
-                                cross_attention_kwargs=self.cross_attention_kwargs,
-                                down_block_additional_residuals=down_block_res_samples,
-                                mid_block_additional_residual=mid_block_res_sample,
-                                added_cond_kwargs=added_cond_kwargs,
-                                return_dict=False,
-                            )[0]
-
-                            # perform guidance
-                            if self.do_classifier_free_guidance:
-                                noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                                noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-
-                            # compute the previous noisy sample x_t -> x_t-1
-                            final_latents = scheduler_optim.step(noise_pred, 
-                                                                t, # current time step 
-                                                                latents_optim, 
-                                                                **extra_step_kwargs, return_dict=False)[0]
-                            # END PROJECTION TO IMAGE SPACE
-
-                            final_image = self.vae.decode(final_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                            final_image = self.image_processor.denormalize(final_image)
-                            
-
-                            # TODO why do I need to put unet to cuda again? 
-                            self.unet.to("cuda")
-                            loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model)
-                            loss.backward()
-                            
-                            if(optimization_arguments["wandb_mode"] == "debug"): #"detailed"):
-                                wandb.log({f"Loss_{i}/{img_name}": loss.item()})
-                                wandb.log({"Gradients/Histogram": wandb.Histogram(latents_optim.grad.cpu())})
-                                wandb.log({"Gradients/Mean": torch.mean(latents_optim.grad).cpu()})
-
-
-                            optimizer.step()
-                            optimizer.zero_grad()
-                        
-                        # update latents with optimized latents
-                        latents = latents_optim.detach()
-                        del latents_optim
-
-                            
-
-
-
-                if((optimization_arguments["wandb_mode"] == "detailed") and ((((i-1) % VIS_STEPS) == 0) or (i == (num_inference_steps-1)))):
-                    if(i == (num_inference_steps-1)):
-                        vis_idx = -1
-                    else: 
-                        vis_idx = (i-1)//VIS_STEPS
-                    # decode optimized latents for visualization
-                    save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-                    save_image = self.image_processor.denormalize(save_image)
-                    if(optimization_arguments['do_optimize']):
-                        show_image = save_image[0].cpu().squeeze().permute(1,2,0)
-                        axis[0,vis_idx].imshow(show_image)
-                        axis[0,vis_idx].set_title(f"t = {i}", fontsize=24)
-
-                        if(final_image is None):
-                            final_image = np.ones_like(show_image)
-                        else: 
-                            final_image = final_image[0].cpu().squeeze().permute(1,2,0)
-                        axis[1,vis_idx].imshow(final_image)
-
+                    # controlnet(s) inference
+                    if guess_mode and self.do_classifier_free_guidance:
+                        # Infer ControlNet only for the conditional batch.
+                        control_model_input = latents
+                        control_model_input = self.scheduler.scale_model_input(control_model_input, t)
+                        controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
                     else:
-                        axis[vis_idx].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                        axis[vis_idx].set_title(f"t = {i}", fontsize=24)
+                        control_model_input = latent_model_input
+                        controlnet_prompt_embeds = prompt_embeds
+
+                    if isinstance(controlnet_keep[i], list):
+                        cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                    else:
+                        controlnet_cond_scale = controlnet_conditioning_scale
+                        if isinstance(controlnet_cond_scale, list):
+                            controlnet_cond_scale = controlnet_cond_scale[0]
+                        cond_scale = controlnet_cond_scale * controlnet_keep[i]
+
+                    down_block_res_samples, mid_block_res_sample = self.controlnet(
+                        control_model_input,
+                        t,
+                        encoder_hidden_states=controlnet_prompt_embeds,
+                        controlnet_cond=image,
+                        conditioning_scale=cond_scale,
+                        guess_mode=guess_mode,
+                        return_dict=False,
+                    )
+
+                    if guess_mode and self.do_classifier_free_guidance:
+                        # Infered ControlNet only for the conditional batch.
+                        # To apply the output of ControlNet to both the unconditional and conditional batches,
+                        # add 0 to the unconditional batch to keep it unchanged.
+                        down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
+                        mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+
+                    # predict the noise residual
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        down_block_additional_residuals=down_block_res_samples,
+                        mid_block_additional_residual=mid_block_res_sample,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
+
+                    # perform guidance
+                    if self.do_classifier_free_guidance:
+                        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                        noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                    # compute the previous noisy sample x_t -> x_t-1
+                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                    # print(f"Scheduler: {self.scheduler}")
+                    
+                    final_image = None
+                    if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
+                        # START OPTIMIZATION 
+                        with torch.enable_grad():
+                            # define scheduler for projection to image space (single step denoising)
+                            scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
+                            optim_timesteps = timesteps[:i]
+                            scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
+                            # print(f"set_timesteps to {optim_timesteps}")
+                            
+                            latents_optim = latents.clone().requires_grad_(True)
+                            optimizer = torch.optim.SGD([latents_optim], lr=optimization_arguments["lr"])
+                            # optimizer = accelerator.prepare(optimizer)
+
+                            scaler = torch.cuda.amp.GradScaler()
+
+                            losses = []
+                            for iters in range(optimization_arguments["iters"]):
+                                # mixed precision training
+
+                                # START PROJECTION TO IMAGE SPACE: Denoise within a single step
+                                scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
+                                scheduler_optim.set_begin_index(i-1)
+                                # print(f"Set begin index to {i-1}")
+
+                                # Relevant thread:
+                                # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
+                                if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
+                                    torch._inductor.cudagraph_mark_step_begin()
+                                # expand the latents if we are doing classifier free guidance
+                                latent_model_input = torch.cat([latents_optim] * 2) if self.do_classifier_free_guidance else latents_optim
+                                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+                                # controlnet(s) inference
+                                if guess_mode and self.do_classifier_free_guidance:
+                                    # Infer ControlNet only for the conditional batch.
+                                    control_model_input = latents_optim
+                                    control_model_input = self.scheduler.scale_model_input(control_model_input, t)
+                                    controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
+                                else:
+                                    control_model_input = latent_model_input
+                                    controlnet_prompt_embeds = prompt_embeds
+
+                                if isinstance(controlnet_keep[i], list):
+                                    cond_scale = [c * s for c, s in zip(controlnet_conditioning_scale, controlnet_keep[i])]
+                                else:
+                                    controlnet_cond_scale = controlnet_conditioning_scale
+                                    if isinstance(controlnet_cond_scale, list):
+                                        controlnet_cond_scale = controlnet_cond_scale[0]
+                                    cond_scale = controlnet_cond_scale * controlnet_keep[i]
+
+                                down_block_res_samples, mid_block_res_sample = self.controlnet(
+                                    control_model_input,
+                                    t, # number of timesteps to denoise
+                                    encoder_hidden_states=controlnet_prompt_embeds,
+                                    controlnet_cond=image,
+                                    conditioning_scale=cond_scale,
+                                    guess_mode=guess_mode,
+                                    return_dict=False,
+                                )
+
+                                if guess_mode and self.do_classifier_free_guidance:
+                                    # Infered ControlNet only for the conditional batch.
+                                    # To apply the output of ControlNet to both the unconditional and conditional batches,
+                                    # add 0 to the unconditional batch to keep it unchanged.
+                                    down_block_res_samples = [torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples]
+                                    mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
+
+                                # predict the noise residual
+                                noise_pred = self.unet(
+                                    latent_model_input,
+                                    t, # number of timesteps to denoise
+                                    encoder_hidden_states=prompt_embeds,
+                                    timestep_cond=timestep_cond,
+                                    cross_attention_kwargs=self.cross_attention_kwargs,
+                                    down_block_additional_residuals=down_block_res_samples,
+                                    mid_block_additional_residual=mid_block_res_sample,
+                                    added_cond_kwargs=added_cond_kwargs,
+                                    return_dict=False,
+                                )[0]
+
+                                # perform guidance
+                                if self.do_classifier_free_guidance:
+                                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+                                # compute the previous noisy sample x_t -> x_t-1
+                                final_latents = scheduler_optim.step(noise_pred, 
+                                                                    t, # current time step 
+                                                                    latents_optim, 
+                                                                    **extra_step_kwargs, return_dict=False)[0]
+                                # END PROJECTION TO IMAGE SPACE
+
+                                final_image = self.vae.decode(final_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                                final_image = self.image_processor.denormalize(final_image)
+                                # TODO why do I need to put unet to cuda again? 
+                                self.unet.to("cuda")
+                                loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model)
+
+                                # loss.backward()
+                                # accelerator.backward(loss, retain_graph = True)
+                                with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
+
+                                    scaler.scale(loss).backward()
+
+                                    
+                                    if(optimization_arguments["wandb_mode"] == "debug"): #"detailed"):
+                                        wandb.log({f"Loss_{i}/{img_name}": loss.item()})
+                                        wandb.log({"Gradients/Histogram": wandb.Histogram(latents_optim.grad.cpu())})
+                                        wandb.log({"Gradients/Mean": torch.mean(latents_optim.grad).cpu()})
 
 
-                    # plt.figure()
-                    # plt.imshow(save_image[0].cpu().squeeze().permute(1,2,0))
-                    # if(optimization_arguments["log_to_wandb"]):
-                    #     wandb.log({f"{img_name}_After": wandb.Image(plt)}) # TODO 
+                                    # optimizer.step()
+                                    scaler.step(optimizer)
+                                    scaler.update()
+                                    optimizer.zero_grad()
+                            
+                            # update latents with optimized latents
+                            latents = latents_optim.detach()
+                            del latents_optim
 
-                    # else:
-                    #     plt.savefig(f"{optimization_arguments['visualize']}/t_{str(int(t)).zfill(4)}_after.jpg")
-                    # plt.close()
+                            
 
-                    # END OPTIMIZATION 
+                with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
 
-                if callback_on_step_end is not None:
-                    callback_kwargs = {}
-                    for k in callback_on_step_end_tensor_inputs:
-                        callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
+                    if((optimization_arguments["wandb_mode"] == "detailed") and ((((i-1) % VIS_STEPS) == 0) or (i == (num_inference_steps-1)))):
+                        if(i == (num_inference_steps-1)):
+                            vis_idx = -1
+                        else: 
+                            vis_idx = (i-1)//VIS_STEPS
+                        # decode optimized latents for visualization
+                        save_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+                        save_image = self.image_processor.denormalize(save_image)
+                        if(optimization_arguments['do_optimize']):
+                            show_image = save_image[0].cpu().squeeze().permute(1,2,0)
+                            axis[0,vis_idx].imshow(show_image)
+                            axis[0,vis_idx].set_title(f"t = {i}", fontsize=24)
 
-                    latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
+                            if(final_image is None):
+                                final_image = np.ones_like(show_image)
+                            else: 
+                                final_image = final_image[0].cpu().squeeze().permute(1,2,0)
+                            axis[1,vis_idx].imshow(final_image)
 
-                # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
-                    progress_bar.update()
-                    if callback is not None and i % callback_steps == 0:
-                        step_idx = i // getattr(self.scheduler, "order", 1)
-                        callback(step_idx, t, latents)
+                        else:
+                            axis[vis_idx].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
+                            axis[vis_idx].set_title(f"t = {i}", fontsize=24)
+                        # END OPTIMIZATION 
+
+                    if callback_on_step_end is not None:
+                        callback_kwargs = {}
+                        for k in callback_on_step_end_tensor_inputs:
+                            callback_kwargs[k] = locals()[k]
+                        callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
+
+                        latents = callback_outputs.pop("latents", latents)
+                        prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
+                        negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
+
+                    # call the callback, if provided
+                    if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                        progress_bar.update()
+                        if callback is not None and i % callback_steps == 0:
+                            step_idx = i // getattr(self.scheduler, "order", 1)
+                            callback(step_idx, t, latents)
 
 
 

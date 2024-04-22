@@ -8,8 +8,40 @@ import ade_config
 from pathlib import Path 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+# used to crop image to a maximum side length of 1536 (small side length is 512). This is used to make the code able to run on 48GB GPU memory.
+class CropToMaxSize(object):
+    def __init__(self, max_size=1536):
+        self.max_size = max_size
+
+    # expects img to be PIL image
+    def __call__(self, img):
+        """
+        Args:
+            img (PIL Image or tensor): Image to be flipped.
+
+        Returns:
+            PIL Image or tensor: Randomly flipped image.
+        """
+        width = img.width
+        height = img.height
+        width, height = img.size
+        resized = False
+
+        if(width > self.max_size): 
+            img = torchvision.transforms.functional.center_crop(img, (height, self.max_size))
+            resized = True
+
+        if(height > self.max_size): 
+            img = torchvision.transforms.functional.center_crop(img, (self.max_size, width))
+            resized = True
+
+        return img, resized
+
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-resize_transform = torchvision.transforms.Resize(size=512)
+# resize_transform = torchvision.transforms.Resize(size=512)
+resize_transform = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), CropToMaxSize(max_size=1536)])
 centercrop = torchvision.transforms.CenterCrop(512)
 topil_transform = torchvision.transforms.ToPILImage()
 

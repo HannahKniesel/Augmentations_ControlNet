@@ -78,6 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse"], default="mcdropout")
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
 
+    parser.add_argument('--mixed_precision', type=str, choices=["no", "bf16", "fp16"], default="bf16")
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
@@ -120,7 +121,8 @@ if __name__ == "__main__":
                             "optim_every_n_steps": args.optim_every_n_steps,
                             "start_t": args.start_t, 
                             "end_t": args.end_t,
-                            "loss": loss}
+                            "loss": loss, 
+                            "mixed_precision": args.mixed_precision}
 
     if(bool(args.wandb_mode in ["standard", "detailed"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
@@ -212,9 +214,11 @@ if __name__ == "__main__":
         # generate augmentations
         augmentations = []
         aug_annotations = []
+        aug_index = 0
         while(len(augmentations)<args.num_augmentations):            
             # TODO include new pipeline
-            generator = torch.manual_seed(0)
+            generator = torch.manual_seed(0 + aug_index)
+            aug_index += 1
             output, elapsed_time, loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
@@ -270,7 +274,8 @@ if __name__ == "__main__":
               Avg time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | \
               Avg time per augmentation = {str(timedelta(seconds=np.mean(mean_time_augmentation)))} | \
               Remaining time = {remainingtime_img_str} | \
-              {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW")
+              {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW |\
+              Crop Images = {dataset.resized_counter}")
         
         if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
