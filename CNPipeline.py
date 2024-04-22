@@ -1361,7 +1361,13 @@ class StableDiffusionControlNetPipeline(
                             # print(f"set_timesteps to {optim_timesteps}")
                             
                             latents_optim = latents.clone().requires_grad_(True)
-                            optimizer = torch.optim.SGD([latents_optim], lr=optimization_arguments["lr"])
+                            if(optimization_arguments["optimizer"] == "sgd"):
+                                optimizer = torch.optim.SGD([latents_optim], lr=optimization_arguments["lr"])
+                            elif(optimization_arguments["optimizer"] == "adam"):
+                                optimizer = torch.optim.Adam([latents_optim], lr=optimization_arguments["lr"])
+                            else: 
+                                print(f"ERROR::optimizer {optimization_arguments["optimizer"]} not implemented.")
+                                return
                             # optimizer = accelerator.prepare(optimizer)
 
                             scaler = torch.cuda.amp.GradScaler()

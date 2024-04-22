@@ -1,7 +1,8 @@
 import numpy as np
 
 data_path = "./data/ade/ADEChallengeData2016/"
-save_path = "./data/ade_augmented/" # save aumentations to + filter this data
+# save_path = "./data/ade_augmented/" # save aumentations to + filter this data
+save_path = "./data/ade_augmented_optim/"
 
 vis_folder = "/visualization/"
 images_folder = "/images/training/"

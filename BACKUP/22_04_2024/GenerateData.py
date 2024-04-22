@@ -67,18 +67,18 @@ if __name__ == "__main__":
 
     # optimization parameters
     parser.add_argument('--optimize', action='store_true')
+    parser.add_argument('--optimization_target', type=str, choices = ["latents", "initial"], default="latents")
     parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed"], default = "standard")
     parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--lr', type=float, default=1000.)
     parser.add_argument('--iters', type=int, default=1)
-    parser.add_argument('--optimizer', type=str, choices=["adam", "sgd"], default="sgd")
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
     parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse"], default="mcdropout")
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
 
-    parser.add_argument('--mixed_precision', type=str, choices=["bf16", "fp16"], default="bf16")
+    parser.add_argument('--mixed_precision', type=str, choices=["no", "bf16", "fp16"], default="bf16")
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
@@ -113,21 +113,16 @@ if __name__ == "__main__":
     else: 
         guess_mode = False
 
-    if(not args.optimize):
-        print("WARNING::Standard data generation. No optimization.")
-        args.iters = 0
-
     optimization_params = {"do_optimize": args.optimize, 
+                           "optimization_target": args.optimization_target,
                             "wandb_mode": args.wandb_mode, 
                             "lr": args.lr, 
-                            "iters": args.iters,
-                            "optimizer": args.optimizer, 
+                            "iters": args.iters, 
                             "optim_every_n_steps": args.optim_every_n_steps,
                             "start_t": args.start_t, 
                             "end_t": args.end_t,
                             "loss": loss, 
                             "mixed_precision": args.mixed_precision}
-    
 
     if(bool(args.wandb_mode in ["standard", "detailed"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
@@ -194,7 +189,10 @@ if __name__ == "__main__":
         controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
         print(f"INFO::load default controlnet {checkpoint}")
 
-    controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+    if((args.optimization_target == "latents") or (not args.optimize)):
+        controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+    elif(args.optimization_target == "initial"):
+        controlnet_pipe = SDCNPipeline_Init.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
     controlnet_pipe.set_progress_bar_config(disable=True)
