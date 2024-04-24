@@ -182,3 +182,4 @@ controlnet
 controlnet_model_out/*
 models
 seg_models
+seg_models_optim

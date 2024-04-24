@@ -90,8 +90,8 @@ if __name__ == "__main__":
         results = {seg_model_name : {}}
 
     if(args.remove_black_images):
-        black_images_path = f"{args.data_path}/{ade_config.images_folder.split("/")[:-1]}/black_images/"
-        black_annotations_path = f"{args.data_path}/{ade_config.annotations_folder.split("/")[:-1]}/black_images/"
+        black_images_path = f"{args.data_path}/black_images/"
+        black_annotations_path = f"{args.data_path}/black_annotations/"
         os.makedirs(black_images_path, exist_ok = True)
         os.makedirs(black_annotations_path, exist_ok = True)
         print(f"INFO::Generate folder for black images at {black_images_path} and at {black_annotations_path}")
@@ -130,7 +130,7 @@ if __name__ == "__main__":
                     results[seg_model_name]["entropy"] = [entropy]
 
             if("lcu" in args.uncertainty):
-                lcu = float(lcu_loss(init_image, None, seg_model)[0].cpu())  
+                lcu = float(lcu_loss(init_image, None, None, seg_model)[0].cpu())  
                 try: 
                     results[seg_model_name]["lcu"].append(lcu)
                 except: 
