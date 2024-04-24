@@ -1045,6 +1045,7 @@ class StableDiffusionControlNetPipeline(
                 second element is a list of `bool`s indicating whether the corresponding generated image contains
                 "not-safe-for-work" (nsfw) content.
         """
+        
         callback = kwargs.pop("callback", None)
         callback_steps = kwargs.pop("callback_steps", None)
 
@@ -1224,6 +1225,15 @@ class StableDiffusionControlNetPipeline(
         elif(optimization_arguments["mixed_precision"] == "no"): 
             weight_dtype = torch.float32
             enable_mp = False
+
+        # TODO preprocess annotation to speed up process
+        # import pdb 
+        # pdb.set_trace()
+
+        # logits = seg_model()
+        # gt_mask = torchvision.transforms.functional.center_crop(gt_mask, (height, width))
+        # gt_mask = torchvision.transforms.functional.resize(gt_mask, get_size(input, model)[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze()
+        
         
         accelerator = Accelerator(
             gradient_accumulation_steps=1,
@@ -1353,6 +1363,7 @@ class StableDiffusionControlNetPipeline(
                     final_image = None
                     if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
                         # START OPTIMIZATION 
+                        # TODO change back to enable grad
                         with torch.enable_grad():
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
