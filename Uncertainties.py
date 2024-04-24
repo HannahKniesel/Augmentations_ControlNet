@@ -20,7 +20,16 @@ def forward_model(input,model):
         cls_score = torch.nn.functional.softmax(mask_cls_results, dim=-1)[..., :-1]
         mask_pred = mask_pred_results.sigmoid()
         out = torch.einsum('bqc, bqhw->bchw', cls_score, mask_pred)
-    return out
+    return out # bchw
+
+
+    """if(gt_mask != None):
+        class_indices = np.unique(gt_mask)
+        out = out.permute(1,0,2,3) #cbhw
+
+        for class_idx in class_incides:
+            mask = (gt_mask == class_idx) #bhw
+            logits = out[:,mask]"""
 
 #     best = "maximum"
 def mcdropout_loss(input, real_images, gt_mask, model, mc_samples = 5, visualize = False):
@@ -75,6 +84,7 @@ def lmu_loss(input,real_images, gt_mask, model, visualize = False):
 #     best = "minimum"
 def lcu_loss(input, real_images, gt_mask, model, visualize = False):
     out = forward_model(input,model)
+
     maximum = torch.max(out, dim = 1).values
     
     if(visualize):

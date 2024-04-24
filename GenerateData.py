@@ -17,7 +17,6 @@ import ade_config
 from Datasets import Ade20kDataset
 from Utils import get_name, device
 from CNPipeline import StableDiffusionControlNetPipeline as SDCNPipeline_Latents
-from CNPipelineInital import StableDiffusionControlNetPipeline as SDCNPipeline_Init
 from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, mse_loss
 
 from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss
@@ -49,6 +48,7 @@ if __name__ == "__main__":
 
     # General Parameters
     parser.add_argument('--experiment_name', type = str, default="")
+    parser.add_argument('--data_to_augment', type = str, default="./data/ade/ADEChallengeData2016/")
     parser.add_argument('--num_augmentations', type = int, default=1)
     parser.add_argument('--seed', type = int, default=7353)
 
@@ -200,7 +200,7 @@ if __name__ == "__main__":
     controlnet_pipe.set_progress_bar_config(disable=True)
 
     # get data
-    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.prompt_type, args.seed)
+    dataset = Ade20kDataset(args.start_idx, args.end_idx, args.prompt_type, root_path = args.data_to_augment, copy_data = True, seed = args.seed)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     mean_time_img = []
     mean_time_augmentation = []

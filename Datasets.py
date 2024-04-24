@@ -21,8 +21,10 @@ def get_name(path, idx):
 
 # abstract dataset class to load image, annotation and prompt paths
 class AbstractAde20k(TorchDataset):
-    def __init__(self, start_idx, end_idx, prompt_type, seed = 42):
-        data_paths = sorted(glob(ade_config.data_path+ade_config.images_folder+"*.jpg"))
+    def __init__(self, start_idx, end_idx, prompt_type, root_path = "", seed = 42):
+        if(root_path == ""):
+            root_path = ade_config.data_path
+        data_paths = sorted(glob(root_path+ade_config.images_folder+"*.jpg"))
         if((start_idx > 0) and (end_idx >= 0)):
             data_paths = data_paths[start_idx:end_idx]
             start_idx = start_idx
@@ -31,9 +33,9 @@ class AbstractAde20k(TorchDataset):
         elif(start_idx > 0):
             data_paths = data_paths[start_idx:]
             start_idx = start_idx
-        self.annotations_dir = ade_config.data_path+ade_config.annotations_folder
+        self.annotations_dir = root_path+ade_config.annotations_folder
         self.prompt_type = prompt_type
-        self.prompts_dir = ade_config.data_path+ade_config.prompts_folder
+        self.prompts_dir = root_path+ade_config.prompts_folder
         self.prompts_dir = f"{self.prompts_dir}/{prompt_type}/" # set prompt dir based on prompt_type
         self.data_paths = data_paths
         self.seed = seed
@@ -59,8 +61,8 @@ class Ade20kPromptDataset(AbstractAde20k):
 
 
 class Ade20kDataset(AbstractAde20k):
-    def __init__(self, start_idx, end_idx, prompt_type, copy_data = True, seed = 42):
-        super().__init__(start_idx, end_idx, prompt_type, seed)
+    def __init__(self, start_idx, end_idx, prompt_type, root_path = "", copy_data = True, seed = 42):
+        super().__init__(start_idx, end_idx, prompt_type, root_path, seed)
         self.aspect_resize = resize_transform
         self.copy_data = copy_data
         self.resized_counter = 0
