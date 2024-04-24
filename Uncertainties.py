@@ -85,6 +85,18 @@ def lcu_loss(input, real_images, gt_mask, model, visualize = False):
     uncertainty = torch.mean(maximum, dim = (1,2))
     return uncertainty, None
 
+
+def entropy(logits):
+    probability = softmax(logits) # compute softmax over the class dimension to get probability of class --> shape: bs, classes, w, h
+    entropy = -1*torch.sum(probability*torch.log(probability), dim = 1) # compute entropy over all classes (for each pixel value) --> shape: bs, w, h
+    return entropy
+
+def segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
+    import pdb 
+    pdb.set_trace()
+    return
+
+
 #     best = "maximum"
 def entropy_loss(input, real_images, gt_mask, model, visualize = False):
     out = forward_model(input,model) # bs, classes, w, h
