@@ -1509,7 +1509,7 @@ class StableDiffusionControlNetPipeline(
                                 final_image = np.ones_like(show_image)
                             else: 
                                 final_image = final_image[0].cpu().squeeze().permute(1,2,0)
-                            axis[1,vis_idx].imshow(final_image)
+                            axis[1,vis_idx].imshow(final_image.to(torch.float16))
 
                         else:
                             axis[vis_idx].imshow(save_image[0].cpu().squeeze().permute(1,2,0))
