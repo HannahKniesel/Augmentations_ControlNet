@@ -1364,7 +1364,7 @@ class StableDiffusionControlNetPipeline(
                     if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
                         # START OPTIMIZATION 
                         # TODO change back to enable grad
-                        with torch.enable_grad():
+                        with torch.no_grad(): #torch.enable_grad():
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
                             optim_timesteps = timesteps[:i]

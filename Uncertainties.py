@@ -128,6 +128,30 @@ def segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
     return -1*uncertainty
 
 # idea: minimize std over pixel values, maximize it over classes
+def min_max_segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
+    logits = forward_model(input,model) # bs, classes, w, h
+
+    gt_mask = torchvision.transforms.functional.center_crop(gt_mask, input.shape[-2:])
+    gt_mask = torchvision.transforms.functional.resize(gt_mask, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze()
+    class_indices = np.unique(gt_mask)
+    if(visualize):
+        uncertainty_img = torch.zeros(gt_mask.shape)
+    uncertainty = 0
+    for class_idx in class_indices: 
+        mask = (gt_mask == class_idx)
+        class_logits = logits[:,:,mask]
+        import pdb 
+        pdb.set_trace()
+        class_logits = torch.mean(class_logits, dim = -1)
+        class_uncertainty = entropy(class_logits)
+        if(visualize):
+            uncertainty_img[mask] = class_uncertainty
+        uncertainty += class_uncertainty
+    
+    if(visualize):
+        return -1*uncertainty, uncertainty_img
+        
+    return -1*uncertainty
 
 
 #     best = "maximum"
