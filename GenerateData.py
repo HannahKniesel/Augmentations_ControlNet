@@ -19,7 +19,7 @@ from Utils import get_name, device
 from CNPipeline import StableDiffusionControlNetPipeline as SDCNPipeline_Latents
 from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, mse_loss
 
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, segment_entropy_loss
+from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, segment_entropy_loss, min_max_segment_entropy_loss
 
 
 # TODO load dotenv
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
-    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse", "segment_entropy"], default="mcdropout")
+    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse", "segment_entropy", "min_max_segment_entropy"], default="mcdropout")
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
 
     parser.add_argument('--mixed_precision', type=str, choices=["bf16", "fp16"], default="bf16")
@@ -107,6 +107,12 @@ if __name__ == "__main__":
     elif(args.loss == "segment_entropy"):
         loss = segment_entropy_loss
         args.model_path = args.model_path + "eval_model_scripted.pt"
+    elif(args.loss == "min_max_segment_entropy"):
+        loss = min_max_segment_entropy_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"
+    else: 
+        print(f"ERROR:: Could not match the defined loss {args.loss}")
+
 
 
     if(args.prompt_type == "no_prompts"):

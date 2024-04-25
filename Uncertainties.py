@@ -128,25 +128,53 @@ def segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
     return -1*uncertainty, None
 
 # idea: minimize std over pixel values, maximize it over classes
-def min_max_segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
+def min_max_segment_entropy_loss(input, real_images, gt_mask, model, visualize = True):
+    from Utils import index2color_annotation
+    import ade_config
+    import matplotlib.pyplot as plt
+
+    """import pdb 
+    pdb.set_trace()
+
+    fig,axs = plt.subplots(1,2)
+    axs[0].imshow(input.squeeze().permute(1,2,0).cpu().to(torch.float32).numpy())
+    axs[1].imshow(real_images.squeeze().numpy())
+    plt.savefig("./debug.jpg")
+
+    import pdb 
+    pdb.set_trace()"""
+
+
     logits = forward_model(input,model) # bs, classes, w, h
+
+    # prediction for visualization purposes
+    prediction = softmax(logits).argmax(1)
+    prediction = index2color_annotation(prediction.cpu().squeeze(), ade_config.palette)
 
     gt_mask = torchvision.transforms.functional.center_crop(gt_mask, input.shape[-2:])
     gt_mask = torchvision.transforms.functional.resize(gt_mask, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze()
     class_indices = np.unique(gt_mask)
     if(visualize):
         uncertainty_img = torch.zeros(gt_mask.shape)
+        uncertainty_img_pixles = torch.zeros(gt_mask.shape)
+        uncertainty_img_classes = torch.zeros(gt_mask.shape)
+
     uncertainty = 0
     for class_idx in class_indices: 
         mask = (gt_mask == class_idx)
         class_logits = logits[:,:,mask]
-        import pdb 
-        pdb.set_trace()
-        class_logits = torch.mean(class_logits, dim = -1)
-        class_uncertainty = entropy(class_logits)
+        # for each class prediction compute the entropy over the segment. This is supposed to be low (all class predictions within the same segment should show the same object)
+        pixel_entropy = torch.mean(entropy(class_logits.permute(0,2,1)))
+        # for each pixel compute the entropy over all classes. This entropy is supposed to be high (class probabilities should be uniformly distributed.)
+        class_entropy = torch.mean(entropy(class_logits))
+        segment_uncertainty = pixel_entropy - class_entropy
+        
         if(visualize):
-            uncertainty_img[mask] = class_uncertainty
-        uncertainty += class_uncertainty
+            uncertainty_img[mask] = segment_uncertainty
+            uncertainty_img_pixles[mask] = pixel_entropy
+            uncertainty_img_classes[mask] = -class_entropy
+
+        uncertainty += segment_uncertainty
     
     if(visualize):
         return -1*uncertainty, uncertainty_img

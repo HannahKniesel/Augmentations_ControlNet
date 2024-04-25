@@ -1462,6 +1462,11 @@ class StableDiffusionControlNetPipeline(
 
                                 final_image = self.vae.decode(final_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                                 final_image = self.image_processor.denormalize(final_image)
+
+                                plt.figure()
+                                plt.imshow(final_image.squeeze().permute(1,2,0).cpu().to(torch.float32).numpy())
+                                plt.savefig(f"./single_step_IS{i}-iter{iters}.jpg")
+
                                 # TODO why do I need to put unet to cuda again? 
                                 self.unet.to("cuda")
                                 loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model)
