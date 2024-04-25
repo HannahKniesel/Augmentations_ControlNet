@@ -125,7 +125,7 @@ def segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
     if(visualize):
         return -1*uncertainty, uncertainty_img
         
-    return -1*uncertainty
+    return -1*uncertainty, None
 
 # idea: minimize std over pixel values, maximize it over classes
 def min_max_segment_entropy_loss(input, real_images, gt_mask, model, visualize = False):
@@ -152,6 +152,7 @@ def min_max_segment_entropy_loss(input, real_images, gt_mask, model, visualize =
         return -1*uncertainty, uncertainty_img
         
     return -1*uncertainty
+# idea: minimize entropy over pixel values within one segment, maximize it over classes
 
 
 #     best = "maximum"
