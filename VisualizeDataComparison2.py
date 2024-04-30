@@ -10,7 +10,7 @@ import torch
 
 from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
 from Utils import read_txt, index2color_annotation, device, resize_transform, totensor_transform
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss
+from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, min_max_segment_entropy_loss
 
 
 if __name__ == "__main__":
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_images', type = int, default=20)
     parser.add_argument('--save_to', type = str, default="")
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
-    parser.add_argument('--uncertainty', type=str, choices = ["", "mcdropout", "lcu", "lmu", "smu", "entropy"], default="mcdropout")
+    parser.add_argument('--uncertainty', type=str, choices = ["", "mcdropout", "lcu", "lmu", "smu", "entropy", "segment_based_entropy"], default="mcdropout")
 
 
     args = parser.parse_args()
@@ -47,7 +47,11 @@ if __name__ == "__main__":
         args.model_path = args.model_path + "eval_model_scripted.pt"
     elif(args.uncertainty == "lcu"):
         loss = lcu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"    
+        args.model_path = args.model_path + "eval_model_scripted.pt"   
+    elif(args.uncertainty == "segment_based_entropy"): 
+        loss = min_max_segment_entropy_loss
+        args.model_path = args.model_path + "eval_model_scripted.pt"   
+
     
     if(args.uncertainty != ""):
         seg_model = torch.jit.load(args.model_path)
@@ -100,78 +104,86 @@ if __name__ == "__main__":
         if(args.uncertainty == ""):
             add_col = 0
             uncertainty = ""
+        
+        with torch.no_grad():
+            fig, axis = plt.subplots(3+add_col, len(args.comparisons), figsize = (size*len(args.comparisons), (3+add_col)*size))
 
-        fig, axis = plt.subplots(3+add_col, len(args.comparisons), figsize = (size*len(args.comparisons), (3+add_col)*size))
+            """axis[0,0].imshow(real_img)
+            axis[0,0].set_title(Path(args.comparisons[0]).stem + "\nReal", fontsize=24)
 
-        """axis[0,0].imshow(real_img)
-        axis[0,0].set_title(Path(args.comparisons[0]).stem + "\nReal", fontsize=24)
+            axis[1,0].imshow(real_img)
+            axis[1,0].imshow(annotation, alpha = 0.7)
+            axis[1,0].set_title("Annotation", fontsize=24)
 
-        axis[1,0].imshow(real_img)
-        axis[1,0].imshow(annotation, alpha = 0.7)
-        axis[1,0].set_title("Annotation", fontsize=24)
+            axis[2,0].imshow(synthetic_img)
+            axis[2,0].set_title("Synthetic", fontsize=24)
 
-        axis[2,0].imshow(synthetic_img)
-        axis[2,0].set_title("Synthetic", fontsize=24)
+            axis[0,0].set_ylabel(Path(args.comparisons[0]).stem, fontsize=24)# + "\n" + prompt)"""
 
-        axis[0,0].set_ylabel(Path(args.comparisons[0]).stem, fontsize=24)# + "\n" + prompt)"""
+            # TODO add all comparisons
+            for c in range(0,len(args.comparisons)):
+                real_path = f"{os.path.join(args.comparisons[c], images_folder, dp_name)}{images_format}"
+                real_img = np.array(Image.open(real_path))
+                annotation_indices = np.array(Image.open(f"{os.path.join(args.comparisons[c], annotations_folder, dp_name)}{annotations_format}"))
+                annotation = index2color_annotation(annotation_indices, palette)
+                synthetic_path = os.path.join(Path(real_path).parent,  "_".join(Path(real_path).stem.split("_")[:-1])+"_0001"+images_format)
+                synthetic_img = np.array(Image.open(synthetic_path))
 
-        # TODO add all comparisons
-        for c in range(0,len(args.comparisons)):
-            real_path = f"{os.path.join(args.comparisons[c], images_folder, dp_name)}{images_format}"
-            real_img = np.array(Image.open(real_path))
-            annotation = index2color_annotation(np.array(Image.open(f"{os.path.join(args.comparisons[c], annotations_folder, dp_name)}{annotations_format}")), palette)
-            synthetic_path = os.path.join(Path(real_path).parent,  "_".join(Path(real_path).stem.split("_")[:-1])+"_0001"+images_format)
-            synthetic_img = np.array(Image.open(synthetic_path))
+                if(args.uncertainty != ""):
+                    compute_img,_ = resize_transform(Image.open(synthetic_path)) # resize shortest edge to 512
+                    compute_img = np.array(compute_img)
+                    if(len(compute_img.shape) != 3):
+                        compute_img = np.stack([compute_img,compute_img,compute_img], axis = 0).transpose(1,2,0)
+                    compute_img = totensor_transform(compute_img).unsqueeze(0)
+                    annotation_indices = totensor_transform(annotation_indices)
+                    print(annotation_indices.shape)
+                    print(compute_img.shape)
 
-            if(args.uncertainty != ""):
-                compute_img,_ = resize_transform(Image.open(synthetic_path)) # resize shortest edge to 512
-                compute_img = np.array(compute_img)
-                if(len(compute_img.shape) != 3):
-                    compute_img = np.stack([compute_img,compute_img,compute_img], axis = 0).transpose(1,2,0)
-                compute_img = totensor_transform(compute_img).unsqueeze(0)
-                uncertainty, uncertainty_img = loss(compute_img.to(device), None, None, seg_model, visualize = True)
-                uncertainty_imgs.append(uncertainty_img.squeeze())
-                uncertainties.append(float(uncertainty.detach().cpu().numpy()[0]))
+                    uncertainty,uncertainty_img = loss(compute_img.to(device), None, annotation_indices, seg_model, visualize = True)
+
+                    #uncertainty, uncertainty_img = loss(compute_img.to(device), None, None, seg_model, visualize = True)
+                    uncertainty_imgs.append(uncertainty_img.squeeze())
+                    uncertainties.append(float(uncertainty.detach().cpu().numpy()[0]))
+                
+                comp_prompts_folder_tmp = glob(os.path.join(args.comparisons[c], base_prompts_folder)+"/*")[0]
+                if(not os.path.isdir(comp_prompts_folder_tmp)):
+                    comp_prompts_folder = os.path.join(args.comparisons[c], base_prompts_folder)
+                else: 
+                    comp_prompts_folder = comp_prompts_folder_tmp
+
+                prompt = read_txt(f"{os.path.join(comp_prompts_folder, dp_name)}{prompts_format}")[0]
+
+
+                axis[0,c].imshow(real_img)
+                axis[0,c].set_title(Path(args.comparisons[c]).stem + "\nReal", fontsize=24)
+                # axis[0,c].set_ylabel(Path(args.comparisons[c]).stem+ "\n" + str(uncertainty.float()), fontsize=24) # + "\n" + prompt)
+
             
-            comp_prompts_folder_tmp = glob(os.path.join(args.comparisons[c], base_prompts_folder)+"/*")[0]
-            if(not os.path.isdir(comp_prompts_folder_tmp)):
-                comp_prompts_folder = os.path.join(args.comparisons[c], base_prompts_folder)
-            else: 
-                comp_prompts_folder = comp_prompts_folder_tmp
+                axis[1,c].imshow(real_img)
+                axis[1,c].imshow(annotation, alpha = 0.7)
+                axis[1,c].set_title("Annotation", fontsize=24)
 
-            prompt = read_txt(f"{os.path.join(comp_prompts_folder, dp_name)}{prompts_format}")[0]
-
-
-            axis[0,c].imshow(real_img)
-            axis[0,c].set_title(Path(args.comparisons[c]).stem + "\nReal", fontsize=24)
-            # axis[0,c].set_ylabel(Path(args.comparisons[c]).stem+ "\n" + str(uncertainty.float()), fontsize=24) # + "\n" + prompt)
-
-        
-            axis[1,c].imshow(real_img)
-            axis[1,c].imshow(annotation, alpha = 0.7)
-            axis[1,c].set_title("Annotation", fontsize=24)
-
-            axis[2,c].imshow(synthetic_img)
-            axis[2,c].set_title("Synthetic", fontsize=24)
+                axis[2,c].imshow(synthetic_img)
+                axis[2,c].set_title("Synthetic", fontsize=24)
 
 
-        # plot uncertainty heatmap
-        if(args.uncertainty != ""):
-            maximum = np.concatenate(uncertainty_imgs).max()
-            minimum = np.concatenate(uncertainty_imgs).min()
+            # plot uncertainty heatmap
+            if(args.uncertainty != ""):
+                maximum = np.concatenate(uncertainty_imgs).max()
+                minimum = np.concatenate(uncertainty_imgs).min()
 
-            for c, (uncertainty_img, uncertainty) in enumerate(zip(uncertainty_imgs, uncertainties)): 
-                axis[3,c].imshow((uncertainty_img-minimum)/(maximum-minimum), cmap="rainbow")
-                axis[3,c].set_title(f"{args.uncertainty} = {uncertainty:.4f}",fontsize=24) 
+                for c, (uncertainty_img, uncertainty) in enumerate(zip(uncertainty_imgs, uncertainties)): 
+                    axis[3,c].imshow((uncertainty_img-minimum)/(maximum-minimum), cmap="rainbow")
+                    axis[3,c].set_title(f"{args.uncertainty} = {uncertainty:.4f}",fontsize=24) 
 
-        for axs in axis: 
-            for a in axs: 
-                a.set_axis_off()
-        
-        plt.tight_layout()
-        plt.savefig(args.save_to + "/" + dp_name + ".jpg")
-        plt.savefig(args.save_to + "/" + dp_name + ".pdf")
-        plt.close()
+            for axs in axis: 
+                for a in axs: 
+                    a.set_axis_off()
+            
+            plt.tight_layout()
+            plt.savefig(args.save_to + "/" + dp_name + ".jpg")
+            plt.savefig(args.save_to + "/" + dp_name + ".pdf")
+            plt.close()
 
 
 

@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from Datasets import SyntheticAde20kDataset
 from Utils import device
-from Uncertainties import mcdropout_loss, entropy_loss, lcu_loss, lmu_loss, smu_loss
+from Uncertainties import mcdropout_loss, entropy_loss, lcu_loss, lmu_loss, smu_loss, min_max_segment_entropy_loss
 import ade_config
 
 # Log number of black images 
@@ -31,7 +31,9 @@ if __name__ == "__main__":
     # General Parameters
     parser.add_argument('--experiment_name', type = str, default="")
     parser.add_argument('--wandb_project', type=str, default="")
-    parser.add_argument('--uncertainty', type=str, nargs="+", choices=["entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["mc_dropout"])
+    parser.add_argument('--uncertainty', type=str, nargs="+", choices=["entropy", "segment_based_entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["mc_dropout"])
+    parser.add_argument('--w_pixel', type=float, default=0.0)
+    parser.add_argument('--w_class', type=float, default=1.0)
     parser.add_argument('--data_path', type=str, default="./data/ade_augmented/finetuned_cn10/") 
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
     parser.add_argument('--remove_black_images', action='store_true')
@@ -128,6 +130,13 @@ if __name__ == "__main__":
                     results[seg_model_name]["entropy"].append(entropy)
                 except: 
                     results[seg_model_name]["entropy"] = [entropy]
+
+            if("segment_based_entropy" in args.uncertainty):
+                entropy = float(min_max_segment_entropy_loss(init_image, None, annotation, seg_model, args.w_pixel, args.w_class)[0].cpu())    # generated_image, real_images, model,
+                try: 
+                    results[seg_model_name]["segment_based_entropy"].append(entropy)
+                except: 
+                    results[seg_model_name]["segment_based_entropy"] = [entropy]
 
             if("lcu" in args.uncertainty):
                 lcu = float(lcu_loss(init_image, None, None, seg_model)[0].cpu())  

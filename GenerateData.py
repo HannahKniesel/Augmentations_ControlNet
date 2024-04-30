@@ -75,7 +75,9 @@ if __name__ == "__main__":
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
-    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse", "segment_entropy", "min_max_segment_entropy"], default="mcdropout")
+    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse", "segment_entropy", "min_max_segment_entropy"], default="min_max_segment_entropy")
+    parser.add_argument('--w_pixel', type=float, default=1.0)
+    parser.add_argument('--w_class', type=float, default=1.0)
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
 
     parser.add_argument('--mixed_precision', type=str, choices=["bf16", "fp16"], default="bf16")
@@ -135,6 +137,8 @@ if __name__ == "__main__":
                             "start_t": args.start_t, 
                             "end_t": args.end_t,
                             "loss": loss, 
+                            "w_pixel": args.w_pixel,
+                            "w_class": args.w_class,
                             "mixed_precision": args.mixed_precision}
     
 
@@ -215,6 +219,8 @@ if __name__ == "__main__":
     mean_time_augmentation = []
     total_nsfw = 0
     avg_loss = []
+    avg_loss_classentropy = []
+    avg_loss_pixelentropy = []
 
     # iterate over dataset
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
@@ -230,7 +236,7 @@ if __name__ == "__main__":
             # TODO include new pipeline
             generator = torch.manual_seed(0 + aug_index)
             aug_index += 1
-            output, elapsed_time, loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
+            output, elapsed_time, loss, loss_classentropy, loss_pixelentropy = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
                                     controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
@@ -255,11 +261,15 @@ if __name__ == "__main__":
             augmented = output.images
             num_nsfw = 0
 
-            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss}")
+            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Class Entropy = {loss_classentropy} | Loss Pixel Entropy = {loss_pixelentropy}")
 
             total_nsfw += num_nsfw
             augmentations.extend(augmented)
             avg_loss.append(loss)
+            avg_loss_classentropy.append(loss_classentropy)
+            avg_loss_pixelentropy.append(loss_pixelentropy)
+
+
             mean_time_augmentation.append(elapsed_time)
 
             # make sure annotation and images have similar resolution
@@ -280,6 +290,8 @@ if __name__ == "__main__":
         remainingtime_img_str = str(timedelta(seconds=remaining_time))
         print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | \
               Avg Loss = {np.mean(avg_loss)} | \
+              Avg Loss Classentropy = {np.mean(avg_loss_classentropy)} | \
+              Avg Loss Pixelentropy = {np.mean(avg_loss_pixelentropy)} | \
               Number of augmentations = {len(augmentations)} | \
               Time for image = {elapsedtime_img_str} | \
               Avg time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | \
@@ -290,6 +302,8 @@ if __name__ == "__main__":
         
         if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
+                    "AvgLoss Class Entropy": np.mean(avg_loss_classentropy), 
+                    "AvgLoss Pixel Entropy": np.mean(avg_loss_pixelentropy), 
                     "AvgTime Augmentation": np.mean(mean_time_augmentation)})
 
     end_time = time.time()
