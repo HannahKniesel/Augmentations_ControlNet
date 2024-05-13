@@ -34,8 +34,32 @@ def mse_reg(logits, segments, normalize = True):
     return mse_value
 
 def kld_reg(logits, segments, normalize = True):
-    # TODO implement
-    return None
+    class_indices = np.unique(segments)
+    kld_value = 0
+    for class_idx in class_indices:
+        mask = (segments == class_idx)
+        import pdb 
+        pdb.set_trace()
+        # class_logits should have shape of BS, dim (with BS being the distributions to compare and dim the axis which sums to 1 for every dist )
+        class_logits = logits[:,:,mask]
+        class_logits = class_logits.squeeze().permute(1,0)
+        # the pairwise KLD between the pixel prediction should be minimized such that all predictions predict the same class within one segment.
+        dist = F.softmax(class_logits, dim = 1)
+        reps = dist.shape[0]
+        p_dist = torch.Tensor.repeat(dist, repeats = (reps,1))
+        q_dist = torch.repeat_interleave(dist, repeats = torch.tensor([reps]), dim = 0)
+        kld_segment_value = torch.sum(p_dist * torch.log(p_dist/q_dist), dim = 1)
+
+        if(normalize):
+            kld_value += torch.sum(mask) * kld_segment_value
+        else: 
+            kld_value += kld_segment_value
+    
+    if(normalize):
+        kld_value = kld_value / (segments.shape[0]*segments.shape[1])
+    
+    return kld_value
+
 
 
 
