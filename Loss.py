@@ -65,8 +65,7 @@ def loss_fct(generated_image, real_image, gt_segments, model, uncertainty_loss_f
     logits = forward_model(generated_image, model) # bs x c x h x w
 
     if(base_segments == "real"):
-        import pdb 
-        pdb.set_trace()
+        real_image = torchvision.transforms.functional.center_crop(real_image, generated_image.shape[-2:])
         segments = softmax(forward_model(real_image, model)) # bs x c x h x w
         segments = torch.argmax(segments, dim = 1).squeeze().detach().cpu() # W x H #softmax(logits).argmax(1).squeeze().detach().cpu().numpy() #
     elif(base_segments == "gt"):
