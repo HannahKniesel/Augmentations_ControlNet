@@ -7,10 +7,12 @@ from pathlib import Path
 import argparse
 import numpy as np
 import torch
+import cv2
 
 from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
 from Utils import read_txt, index2color_annotation, device, resize_transform, totensor_transform
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, min_max_segment_entropy_loss
+from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, min_max_segment_entropy_loss, get_prediction
+
 
 
 if __name__ == "__main__":
@@ -106,7 +108,7 @@ if __name__ == "__main__":
             uncertainty = ""
         
         with torch.no_grad():
-            fig, axis = plt.subplots(3+add_col, len(args.comparisons), figsize = (size*len(args.comparisons), (3+add_col)*size))
+            fig, axis = plt.subplots(7+add_col, len(args.comparisons), figsize = (size*len(args.comparisons), (3+add_col)*size))
 
             """axis[0,0].imshow(real_img)
             axis[0,0].set_title(Path(args.comparisons[0]).stem + "\nReal", fontsize=24)
@@ -124,8 +126,8 @@ if __name__ == "__main__":
             for c in range(0,len(args.comparisons)):
                 real_path = f"{os.path.join(args.comparisons[c], images_folder, dp_name)}{images_format}"
                 real_img = np.array(Image.open(real_path))
-                annotation_indices = np.array(Image.open(f"{os.path.join(args.comparisons[c], annotations_folder, dp_name)}{annotations_format}"))
-                annotation = index2color_annotation(annotation_indices, palette)
+                annotation_indices = Image.open(f"{os.path.join(args.comparisons[c], annotations_folder, dp_name)}{annotations_format}")
+                annotation = index2color_annotation(np.array(annotation_indices), palette)
                 synthetic_path = os.path.join(Path(real_path).parent,  "_".join(Path(real_path).stem.split("_")[:-1])+"_0001"+images_format)
                 synthetic_img = np.array(Image.open(synthetic_path))
 
@@ -135,6 +137,8 @@ if __name__ == "__main__":
                     if(len(compute_img.shape) != 3):
                         compute_img = np.stack([compute_img,compute_img,compute_img], axis = 0).transpose(1,2,0)
                     compute_img = totensor_transform(compute_img).unsqueeze(0)
+                    anotation_indices = resize_transform(annotation_indices)
+                    annotation_indices = np.array(annotation_indices)
                     annotation_indices = totensor_transform(annotation_indices)
                     print(annotation_indices.shape)
                     print(compute_img.shape)
@@ -143,7 +147,7 @@ if __name__ == "__main__":
 
                     #uncertainty, uncertainty_img = loss(compute_img.to(device), None, None, seg_model, visualize = True)
                     uncertainty_imgs.append(uncertainty_img.squeeze())
-                    uncertainties.append(float(uncertainty.detach().cpu().numpy()[0]))
+                    uncertainties.append(float(uncertainty.detach().cpu().numpy()))
                 
                 comp_prompts_folder_tmp = glob(os.path.join(args.comparisons[c], base_prompts_folder)+"/*")[0]
                 if(not os.path.isdir(comp_prompts_folder_tmp)):
@@ -153,18 +157,39 @@ if __name__ == "__main__":
 
                 prompt = read_txt(f"{os.path.join(comp_prompts_folder, dp_name)}{prompts_format}")[0]
 
-
+                # TODO correctly scale images
                 axis[0,c].imshow(real_img)
                 axis[0,c].set_title(Path(args.comparisons[c]).stem + "\nReal", fontsize=24)
                 # axis[0,c].set_ylabel(Path(args.comparisons[c]).stem+ "\n" + str(uncertainty.float()), fontsize=24) # + "\n" + prompt)
 
-            
                 axis[1,c].imshow(real_img)
                 axis[1,c].imshow(annotation, alpha = 0.7)
-                axis[1,c].set_title("Annotation", fontsize=24)
+                axis[1,c].set_title("Real - Annotation", fontsize=24)
 
-                axis[2,c].imshow(synthetic_img)
-                axis[2,c].set_title("Synthetic", fontsize=24)
+                # axis[2,c].imshow(real_img)
+                real_img = totensor_transform(real_img)
+                real_prediction = get_prediction(real_img.unsqueeze(0).cuda(),seg_model)
+                # real_prediction = cv2.resize(real_prediction, (real_img.shape[2], real_img.shape[1]), interpolation= cv2.INTER_LINEAR)#()
+                axis[2,c].imshow(real_prediction) #, alpha = 0.7)
+                axis[2,c].set_title("Real - Prediction", fontsize=24)
+
+                axis[3,c].imshow(synthetic_img)
+                axis[3,c].set_title("Synthetic", fontsize=24)
+
+                # axis[4,c].imshow(synthetic_img)
+                axis[4,c].imshow(annotation) #, alpha = 0.7)
+                axis[4,c].set_title("Synthetic - Annotation", fontsize=24)
+
+                axis[5,c].imshow(synthetic_img)
+                synthetic_img = totensor_transform(synthetic_img)
+                # print(f"Syn image type: {type(synthetic_img)}")
+                # print(f"Syn image max: {synthetic_img.max()}")
+                # print(f"Syn image min: {synthetic_img.min()}")
+                # print(f"Syn image shape: {synthetic_img.shape}")
+                syn_prediction = get_prediction(synthetic_img.unsqueeze(0).cuda(),seg_model)
+                # syn_prediction = cv2.resize(syn_prediction, (synthetic_img.shape[2], synthetic_img.shape[1]), interpolation= cv2.INTER_LINEAR)#()
+                axis[5,c].imshow(syn_prediction) #, alpha = 0.7)
+                axis[5,c].set_title("Synthetic - Prediction", fontsize=24)
 
 
             # plot uncertainty heatmap
@@ -173,8 +198,8 @@ if __name__ == "__main__":
                 minimum = np.concatenate(uncertainty_imgs).min()
 
                 for c, (uncertainty_img, uncertainty) in enumerate(zip(uncertainty_imgs, uncertainties)): 
-                    axis[3,c].imshow((uncertainty_img-minimum)/(maximum-minimum), cmap="rainbow")
-                    axis[3,c].set_title(f"{args.uncertainty} = {uncertainty:.4f}",fontsize=24) 
+                    axis[6,c].imshow((uncertainty_img-minimum)/(maximum-minimum), cmap="Reds") #, cmap="rainbow")
+                    axis[6,c].set_title(f"{args.uncertainty} = {uncertainty:.4f}",fontsize=24) 
 
             for axs in axis: 
                 for a in axs: 

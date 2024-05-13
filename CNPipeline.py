@@ -49,6 +49,8 @@ from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 # from diffusers import UniPCMultistepScheduler
 from Scheduler import UniPCMultistepScheduler
 
+from Utils import totensor_transform
+
 
 from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMixin, TextualInversionLoaderMixin
 
@@ -1222,6 +1224,8 @@ class StableDiffusionControlNetPipeline(
             generator,
             latents,
         )
+        latents = (latents - torch.mean(latents))/torch.std(latents)
+
         # prepare mixed precision for optimization
         if(optimization_arguments["mixed_precision"] == "bf16"): 
             weight_dtype = torch.bfloat16
@@ -1234,13 +1238,6 @@ class StableDiffusionControlNetPipeline(
             enable_mp = False
 
         # TODO preprocess annotation to speed up process
-        # import pdb 
-        # pdb.set_trace()
-
-        # logits = seg_model()
-        # gt_mask = torchvision.transforms.functional.center_crop(gt_mask, (height, width))
-        # gt_mask = torchvision.transforms.functional.resize(gt_mask, get_size(input, model)[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze()
-        
         
         accelerator = Accelerator(
             gradient_accumulation_steps=1,
@@ -1248,13 +1245,6 @@ class StableDiffusionControlNetPipeline(
             log_with=None,
             project_config=None,
         )
-
-        # self.text_encoder.to("cpu", dtype=weight_dtype)
-        # self.vae.to(accelerator.device, dtype=weight_dtype)
-        # self.unet.to(accelerator.device, dtype=weight_dtype)
-        # self.controlnet.to(accelerator.device, dtype=weight_dtype)
-        # latents = latents.to(accelerator.device, dtype=weight_dtype)
-        # prompt_embeds = prompt_embeds.to(accelerator.device, dtype=weight_dtype).detach()
 
         # only require grads for latents 
         # seg_model.to(accelerator.device, dtype=weight_dtype)
@@ -1303,15 +1293,19 @@ class StableDiffusionControlNetPipeline(
                     torch.cuda.empty_cache()                    
                     final_image = None
                     # START OPTIMIZATION 
-                    if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i > optimization_arguments['start_t']) and (i < optimization_arguments['end_t'])):
+                    if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i <= optimization_arguments['end_t'])):
                         with torch.enable_grad(): #torch.no_grad(): #
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
-                            optim_timesteps = timesteps[:i]
+                            optim_timesteps = timesteps[:(i+1)]
+                            print(f"Timesteps for single step prediction: {optim_timesteps}")
                             scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
                             # print(f"set_timesteps to {optim_timesteps}")
                             
-                            lr = self.get_curr_lr(eta_max = optimization_arguments["lr"], eta_min = 0, curr_step = i, max_step = num_inference_steps-1) 
+                            if(optimization_arguments["cos_annealing"]):
+                                lr = self.get_curr_lr(eta_max = optimization_arguments["lr"], eta_min = 0, curr_step = i, max_step = num_inference_steps-1) 
+                            else:
+                                lr = optimization_arguments["lr"]
                             print(f"INFO::adjust lr to {lr}")
                             latents_optim = latents.clone().requires_grad_(True)
                             if(optimization_arguments["optimizer"] == "sgd"):
@@ -1332,21 +1326,24 @@ class StableDiffusionControlNetPipeline(
 
                                 # START PROJECTION TO IMAGE SPACE: Denoise within a single step
                                 scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
-                                scheduler_optim.set_begin_index(i-1)
+                                scheduler_optim.set_begin_index(i)
                                 # print(f"Set begin index to {i-1}")
 
                                 # Relevant thread:
                                 # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
                                 if (is_unet_compiled and is_controlnet_compiled) and is_torch_higher_equal_2_1:
                                     torch._inductor.cudagraph_mark_step_begin()
+
+                                latents_norm = latents_optim # (latents_optim - torch.mean(latents_optim))/torch.std(latents_optim)
+
                                 # expand the latents if we are doing classifier free guidance
-                                latent_model_input = torch.cat([latents_optim] * 2) if self.do_classifier_free_guidance else latents_optim
+                                latent_model_input = torch.cat([latents_norm] * 2) if self.do_classifier_free_guidance else latents_norm
                                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                                 # controlnet(s) inference
                                 if guess_mode and self.do_classifier_free_guidance:
                                     # Infer ControlNet only for the conditional batch.
-                                    control_model_input = latents_optim
+                                    control_model_input = latents_norm
                                     control_model_input = self.scheduler.scale_model_input(control_model_input, t)
                                     controlnet_prompt_embeds = prompt_embeds.chunk(2)[1]
                                 else:
@@ -1399,20 +1396,25 @@ class StableDiffusionControlNetPipeline(
                                 # compute the previous noisy sample x_t -> x_t-1
                                 final_latents = scheduler_optim.step(noise_pred, 
                                                                     t, # current time step 
-                                                                    latents_optim, 
+                                                                    latents_norm, 
                                                                     **extra_step_kwargs, return_dict=False)[0]
                                 # END PROJECTION TO IMAGE SPACE
 
                                 final_image = self.vae.decode(final_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                                 final_image = self.image_processor.denormalize(final_image)
 
+                                # print(f"image type: {type(final_image)}")
+                                # print(f"image max: {final_image.max()}")
+                                # print(f"image min: {final_image.min()}")
+                                # print(f"image shape: {final_image.shape}")
+
 
                                 """with torch.no_grad():
                                     plt.figure()
                                     plt.imshow(final_image.squeeze().permute(1,2,0).cpu().to(torch.float32).numpy())
                                     plt.savefig(f"./single_step_IS{i}-iter{iters}.jpg")
-                                    plt.close()
-                                """
+                                    plt.close()"""
+                                
                                 # TODO why do I need to put unet to cuda again? 
                                 self.unet.to("cuda")
                                 loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model, optimization_arguments['w_pixel'], optimization_arguments['w_class'])
@@ -1420,21 +1422,20 @@ class StableDiffusionControlNetPipeline(
                                 # loss.backward()
                                 # accelerator.backward(loss, retain_graph = True)
                                 with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
-
                                     scaler.scale(loss).backward()
 
-                                    
                                     if(optimization_arguments["wandb_mode"] == "debug"): #"detailed"):
                                         wandb.log({f"Loss_{i}/{img_name}": loss.item()})
                                         wandb.log({"Gradients/Histogram": wandb.Histogram(latents_optim.grad.cpu())})
                                         wandb.log({"Gradients/Mean": torch.mean(latents_optim.grad).cpu()})
-
 
                                     # optimizer.step()
                                     scaler.step(optimizer)
                                     scaler.update()
                                     optimizer.zero_grad()
                             
+                            # scale latents to standard normal distribution 
+                            # latents_optim = (latents_optim - torch.mean(latents_optim))/torch.std(latents_optim)
                             # update latents with optimized latents
                             latents = latents_optim.detach()
                             del latents_optim
@@ -1592,19 +1593,24 @@ class StableDiffusionControlNetPipeline(
 
 
         # log final loss on image
-        loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-        loss_image = self.image_processor.denormalize(loss_image)
+        # loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+        # loss_image = self.image_processor.denormalize(loss_image)
 
         # axis[0, i//VIS_STEPS].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
         # if(optimization_arguments['visualize']):
             # axis[-1].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
 
+        loss_image = totensor_transform(image[0]).unsqueeze(0).cuda()
+        # print(f"Final image type: {type(loss_image)}")
+        # print(f"Final image max: {loss_image.max()}")
+        # print(f"Final image min: {loss_image.min()}")
+        # print(f"Final image shape: {loss_image.shape}")
 
         loss_classentropy, _ = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = 0, w_class = 1, visualize = False)
         loss_pixelentropy, _ = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = 1, w_class = 0, visualize = False)
         loss, uncertainty_img = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = optimization_arguments['w_pixel'], w_class = optimization_arguments['w_class'], visualize = (optimization_arguments['wandb_mode'] == "detailed"))
         
-        loss_image = loss_image[0].cpu().squeeze().permute(1,2,0)
+        # loss_image = image[0].cpu().squeeze().permute(1,2,0)
 
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
@@ -1626,19 +1632,23 @@ class StableDiffusionControlNetPipeline(
             axis[0].imshow(gt_mask[0].permute(1,2,0))
 
             axis[1].set_title("Prediction")
-            pred = get_prediction(loss_image.permute(2,0,1).unsqueeze(0).cuda(),seg_model)
+            # print(f"Syn image type: {type(loss_image)}")
+            # print(f"Syn image max: {loss_image.max()}")
+            # print(f"Syn image min: {loss_image.min()}")
+            # print(f"Syn image shape: {loss_image.shape}")
+            pred = get_prediction(loss_image,seg_model)
             im = axis[1].imshow(pred.squeeze())
 
             axis[2].set_title(f"Overlay")
-            loss_image_small = cv2.resize(loss_image.numpy(), dsize=uncertainty_img.squeeze().shape[::-1], interpolation=cv2.INTER_CUBIC)
+            loss_image_small = cv2.resize(loss_image.cpu().numpy().squeeze().transpose(1,2,0), dsize=uncertainty_img.squeeze().shape[::-1], interpolation=cv2.INTER_CUBIC)
             axis[2].imshow(loss_image_small, alpha = 1.0)
-            axis[2].imshow(uncertainty_img.squeeze(), alpha = 0.5, cmap="rainbow")
+            axis[2].imshow(uncertainty_img.squeeze(), alpha = 0.5, cmap="Reds")
 
             axis[3].set_title("Generated Image")
-            axis[3].imshow(loss_image)
+            axis[3].imshow(image[0])
             
             axis[4].set_title("Uncertainty Heatmap")
-            im = axis[4].imshow(uncertainty_img.squeeze(), cmap="rainbow")
+            im = axis[4].imshow(uncertainty_img.squeeze(), cmap="Reds")
 
             
 

@@ -87,7 +87,7 @@ def lmu_loss(input,real_images, gt_mask, model, visualize = False):
     return uncertainty, None
 
 #     best = "minimum"
-def lcu_loss(input, real_images, gt_mask, model, visualize = False):
+def lcu_loss(input, real_images, gt_mask, model, w_pixel = 0, w_class = 1, visualize = False):
     out = forward_model(input,model)
 
     maximum = torch.max(out, dim = 1).values
@@ -101,9 +101,9 @@ def lcu_loss(input, real_images, gt_mask, model, visualize = False):
     return uncertainty, None
 
 
-def entropy(logits):
+def entropy(logits, dim = 1):
     probability = softmax(logits) # compute softmax over the class dimension to get probability of class --> shape: bs, classes, w, h
-    entropy = -1*torch.sum(probability*torch.log(probability), dim = 1) # compute entropy over all classes (for each pixel value) --> shape: bs, w, h
+    entropy = -1*torch.sum(probability*torch.log(probability), dim = dim) # compute entropy over all classes (for each pixel value) --> shape: bs, w, h
     return entropy
 
 # only works for single image
@@ -163,8 +163,8 @@ def min_max_segment_entropy_loss(input, real_images, gt_mask, model, w_pixel = 0
     logits = forward_model(input,model) # bs, classes, w, h
 
     # prediction for visualization purposes
-    prediction = softmax(logits).argmax(1)
-    prediction = index2color_annotation(prediction.cpu().squeeze(), ade_config.palette)
+    # prediction = softmax(logits).argmax(1)
+    # prediction = index2color_annotation(prediction.cpu().squeeze(), ade_config.palette)
 
     gt_mask = torchvision.transforms.functional.center_crop(gt_mask, input.shape[-2:])
     gt_mask = torchvision.transforms.functional.resize(gt_mask, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze() #softmax(logits).argmax(1).squeeze().detach().cpu().numpy() #
@@ -180,12 +180,17 @@ def min_max_segment_entropy_loss(input, real_images, gt_mask, model, w_pixel = 0
         class_logits = logits[:,:,mask]
         # for each class prediction compute the entropy over the segment. This is supposed to be low (all class predictions within the same segment should show the same object)
         pixel_entropy = entropy(torch.mean(class_logits, dim = -2))  #torch.mean(entropy(class_logits.permute(0,2,1)))
+        pixel_entropy
         # for each pixel compute the entropy over all classes. This entropy is supposed to be high (class probabilities should be uniformly distributed.)
         class_entropy = -1*entropy(torch.mean(class_logits, dim = -1)) #-1*torch.mean(entropy(class_logits))
         # wandb.log({f"class_entropy img": class_entropy})
         # w_pixel = 1
         # w_class = 1 #0.5 #10
         segment_uncertainty = (w_pixel*pixel_entropy) + (w_class*class_entropy)
+        # print(f"pixel_entropy: {pixel_entropy}")
+        # print(f"class_entropy: {class_entropy}")
+        # print(f"segment_uncertainty: {segment_uncertainty}")
+
         
         if(visualize):
             uncertainty_img[mask] = segment_uncertainty
@@ -219,14 +224,14 @@ def min_max_segment_entropy_loss(input, real_images, gt_mask, model, w_pixel = 0
 
     uncertainty = uncertainty / (gt_mask.shape[0]*gt_mask.shape[1])
     if(visualize):
-        return uncertainty, uncertainty_img
+        return uncertainty[0], -1*uncertainty_img
         
     return uncertainty, None
 # idea: minimize entropy over pixel values within one segment, maximize it over classes
 
 
 #     best = "maximum"
-def entropy_loss(input, real_images, gt_mask, model, visualize = False):
+def entropy_loss(input, real_images, gt_mask, model, w_pixel = 0, w_class = 0, visualize = False):
     out = forward_model(input,model) # bs, classes, w, h
     probability = softmax(out) # compute softmax over the class dimension to get probability of class --> shape: bs, classes, w, h
     entropy = -1*torch.sum(probability*torch.log(probability), dim = 1) # compute entropy over all classes (for each pixel value) --> shape: bs, w, h
@@ -234,10 +239,180 @@ def entropy_loss(input, real_images, gt_mask, model, visualize = False):
     if(visualize):
         uncertainty_img = entropy.detach().cpu()
         uncertainty = -1*torch.mean(entropy) 
+        print(f"Uncertainty: {uncertainty}")
         return uncertainty, uncertainty_img
 
     uncertainty = -1*torch.mean(entropy) # compute mean of the resulting entropy
     return uncertainty, None
+
+# p should have shape of BS, dim (with BS being the distributions to compare and dim the axis which sums to 1 for every dist )
+def pairwise_kld(p):
+    import torch.nn.functional as F
+    dist = F.softmax(p, dim = 1)
+
+    reps = dist.shape[0]
+    p_dist = torch.Tensor.repeat(dist, repeats = (reps,1))
+    q_dist = torch.repeat_interleave(dist, repeats = torch.tensor([reps]), dim = 0)
+
+    return torch.sum(p_dist * torch.log(p_dist/q_dist), dim = 1)
+
+# make distributions of the prediction on the real image fit to the distribution of the generated image.
+# nonsense as this will work against entropy
+# rather make distributions within one segment fit 
+def kl_loss(input, real_images, gt_mask, model, w_pixel, w_class, visualize = False):
+    torch.manual_seed(0)
+    import torch.nn.functional as F
+    kl_loss = torch.nn.KLDivLoss(reduction="sum", log_target = True)
+
+    logits = forward_model(input,model) # bs, classes, w, h
+    log_dist = F.log_softmax(logits, dim=1)
+
+    print(f"Shape log_dist: {log_dist.shape}")
+    print(f"Shape logits: {logits.shape}")
+    print(f"Shape gt_mask: {gt_mask.shape}")
+
+
+
+
+    gt_mask = torchvision.transforms.functional.center_crop(gt_mask, input.shape[-2:])
+    gt_mask = torchvision.transforms.functional.resize(gt_mask, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze() #softmax(logits).argmax(1).squeeze().detach().cpu().numpy() #
+    class_indices = np.unique(gt_mask)
+    if(visualize):
+        uncertainty_img = torch.zeros(gt_mask.shape)
+        uncertainty_img_pixles = torch.zeros(gt_mask.shape)
+        uncertainty_img_classes = torch.zeros(gt_mask.shape)
+
+    uncertainty = 0
+    for class_idx in class_indices: 
+        mask = (gt_mask == class_idx)
+        class_logits = logits[:,:,mask]
+        class_log_dist = log_dist[:,:,mask]
+
+        # minimize the KLD between all predictions within one segment.
+        pixel_entropy = kl_loss(class_log_dist.squeeze().permute(1,0), class_log_dist.squeeze().permute(1,0))
+        print(f"Shape KLdiv: {pixel_entropy.shape}")
+        # for each pixel compute the entropy over all classes. This entropy is supposed to be high (class probabilities should be uniformly distributed.)
+        class_entropy = -1*torch.mean(entropy(class_logits, dim = 1))#-1*torch.mean(entropy(class_logits))
+        
+        # class_entropy = -1*entropy(torch.mean(class_logits, dim = -1)) #-1*torch.mean(entropy(class_logits))
+        # wandb.log({f"class_entropy img": class_entropy})
+        # w_pixel = 1
+        # w_class = 1 #0.5 #10
+        segment_uncertainty = (w_pixel*pixel_entropy) + (w_class*class_entropy)
+        # print(f"pixel_entropy: {pixel_entropy}")
+        # print(f"class_entropy: {class_entropy}")
+        # print(f"segment_uncertainty: {segment_uncertainty}")
+
+        
+        if(visualize):
+            uncertainty_img[mask] = segment_uncertainty
+            # uncertainty_img_pixles[mask] = pixel_entropy
+            # uncertainty_img_classes[mask] = -class_entropy
+        uncertainty += torch.sum(mask) * segment_uncertainty
+
+    """with torch.no_grad():
+        s = 7
+        fig,axs = plt.subplots(1,5, figsize = (5*s, s))
+        plt.suptitle(f"Uncertainty = {uncertainty}")
+        axs[0].imshow(input.squeeze().permute(1,2,0).cpu().to(torch.float32).numpy())
+        axs[0].set_title("Generated image")
+        axs[1].imshow(prediction)
+        axs[1].set_title("Prediction")
+        axs[2].imshow(uncertainty_img_classes)
+        axs[2].set_title("Class Entropy")
+        axs[3].imshow(uncertainty_img_pixles)
+        axs[3].set_title("Pixel Entropy")
+        axs[4].imshow(uncertainty_img)
+        axs[4].set_title("Uncertainty loss")
+
+        for ax in axs: 
+            ax.set_axis_off()
+
+        plt.savefig("./MinMaxEntropy_Pred.jpg")
+        plt.close()
+        import sys
+        sys.exit()"""
+
+
+    uncertainty = uncertainty / (gt_mask.shape[0]*gt_mask.shape[1])
+    if(visualize):
+        return uncertainty, -1*uncertainty_img
+        
+    return uncertainty, None
+
+
+def mse_loss_ours(input, real_images, gt_mask, model, w_pixel, w_class, visualize = False):
+    torch.manual_seed(0)
+    logits = forward_model(input,model) # bs, classes, w, h
+
+    gt_mask = torchvision.transforms.functional.center_crop(gt_mask, input.shape[-2:])
+    gt_mask = torchvision.transforms.functional.resize(gt_mask, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze() #softmax(logits).argmax(1).squeeze().detach().cpu().numpy() #
+    class_indices = np.unique(gt_mask)
+    if(visualize):
+        uncertainty_img = torch.zeros(gt_mask.shape)
+        uncertainty_img_pixles = torch.zeros(gt_mask.shape)
+        uncertainty_img_classes = torch.zeros(gt_mask.shape)
+
+    uncertainty = 0
+    for class_idx in class_indices: 
+        mask = (gt_mask == class_idx)
+        class_logits = logits[:,:,mask]
+
+        print(f"class logits: {class_logits.shape}") # bs, class, pixels
+        print(f"distances: {torch.cdist(class_logits.permute(0,2,1), class_logits.permute(0,2,1)).shape}")
+
+        # the pairwise error between the pixel prediction should be minimized such that all predictions predict the same class within one segment.
+        pixel_entropy = torch.mean(torch.cdist(class_logits.permute(0,2,1), class_logits.permute(0,2,1)))
+        # for each pixel compute the entropy over all classes. This entropy is supposed to be high (class probabilities should be uniformly distributed.)
+        class_entropy = -1*torch.mean(entropy(class_logits, dim = 1))#-1*torch.mean(entropy(class_logits))
+        
+        # class_entropy = -1*entropy(torch.mean(class_logits, dim = -1)) #-1*torch.mean(entropy(class_logits))
+        # wandb.log({f"class_entropy img": class_entropy})
+        # w_pixel = 1
+        # w_class = 1 #0.5 #10
+        segment_uncertainty = (w_pixel*pixel_entropy) + (w_class*class_entropy)
+        # print(f"pixel_entropy: {pixel_entropy}")
+        # print(f"class_entropy: {class_entropy}")
+        # print(f"segment_uncertainty: {segment_uncertainty}")
+
+        
+        if(visualize):
+            uncertainty_img[mask] = segment_uncertainty
+            # uncertainty_img_pixles[mask] = pixel_entropy
+            # uncertainty_img_classes[mask] = -class_entropy
+        uncertainty += torch.sum(mask) * segment_uncertainty
+
+    """with torch.no_grad():
+        s = 7
+        fig,axs = plt.subplots(1,5, figsize = (5*s, s))
+        plt.suptitle(f"Uncertainty = {uncertainty}")
+        axs[0].imshow(input.squeeze().permute(1,2,0).cpu().to(torch.float32).numpy())
+        axs[0].set_title("Generated image")
+        axs[1].imshow(prediction)
+        axs[1].set_title("Prediction")
+        axs[2].imshow(uncertainty_img_classes)
+        axs[2].set_title("Class Entropy")
+        axs[3].imshow(uncertainty_img_pixles)
+        axs[3].set_title("Pixel Entropy")
+        axs[4].imshow(uncertainty_img)
+        axs[4].set_title("Uncertainty loss")
+
+        for ax in axs: 
+            ax.set_axis_off()
+
+        plt.savefig("./MinMaxEntropy_Pred.jpg")
+        plt.close()
+        import sys
+        sys.exit()"""
+
+
+    uncertainty = uncertainty / (gt_mask.shape[0]*gt_mask.shape[1])
+    if(visualize):
+        return uncertainty, -1*uncertainty_img
+        
+    return uncertainty, None
+
+
 
 
 # TODO torch batchify loss for images
