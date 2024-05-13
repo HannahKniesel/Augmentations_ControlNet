@@ -134,7 +134,7 @@ if __name__ == "__main__":
                             "mixed_precision": args.mixed_precision,
                             "cos_annealing": args.cos_annealing}
     if(args.optimize):
-        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}"
+        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}_{args.base_segments}"
         if(args.norm_loss):
             group += "-norm"
     else: 

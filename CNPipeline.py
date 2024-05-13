@@ -1294,7 +1294,7 @@ class StableDiffusionControlNetPipeline(
                     final_image = None
                     # START OPTIMIZATION 
                     if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i <= optimization_arguments['end_t'])):
-                        with torch.no_grad(): #torch.enable_grad(): # 
+                        with torch.enable_grad(): # torch.no_grad(): #
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
                             optim_timesteps = timesteps[:(i+1)]
@@ -1430,7 +1430,7 @@ class StableDiffusionControlNetPipeline(
                                 print(f"annotation min: {annotation.min()}")
                                 print(f"annotation shape: {annotation.shape}")
                                 print(f"annotation device: {annotation.is_cuda}")"""                                
-                                loss, _ = loss_fct(final_image, real_image.cuda(), annotation, seg_model, 
+                                loss, _ = loss_fct(final_image, real_image.cuda().to(weight_dtype), annotation, seg_model, 
                                                    optimization_arguments["uncertainty_loss_fct"], 
                                                    optimization_arguments["reg_fct"], 
                                                    optimization_arguments["w_loss"], 
