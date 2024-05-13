@@ -38,8 +38,6 @@ def kld_reg(logits, segments, normalize = True):
     kld_value = 0
     for class_idx in class_indices:
         mask = (segments == class_idx)
-        import pdb 
-        pdb.set_trace()
         # class_logits should have shape of BS, dim (with BS being the distributions to compare and dim the axis which sums to 1 for every dist )
         class_logits = logits[:,:,mask]
         class_logits = class_logits.squeeze().permute(1,0)
