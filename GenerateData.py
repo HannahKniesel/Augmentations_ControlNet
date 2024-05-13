@@ -133,25 +133,26 @@ if __name__ == "__main__":
                             "norm_loss": args.norm_loss,
                             "mixed_precision": args.mixed_precision,
                             "cos_annealing": args.cos_annealing}
-    
+    if(args.optimize):
+        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}"
+        if(args.norm_loss):
+            group += "-norm"
+    else: 
+        group = "baseline"
 
     if(bool(args.wandb_mode in ["standard", "detailed"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
         """group = "Optimization" if optimization_params['do_optimize'] else "Base"
         if  optimization_params['do_optimize']: """
-        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}"
-        if(args.norm_loss):
-            group += "-norm"
         wandb.init(config = optimization_params, reinit=True, group = group, mode="online")
         # wandb_name = self.wandb_name+"_"+str(wandb.run.id)
         name = f"{args.experiment_name}_{group}_{wandb.run.id}"
         if(args.optimize):
             name = f"{name}_optim"
-        
         wandb.run.name = name
     start_time = time.time()
 
-    ade_config.save_path = ade_config.save_path+"/"+args.experiment_name+"/"
+    ade_config.save_path = ade_config.save_path+"/"+args.experiment_name+"/"+group+"/"
     print(f"Save to: {ade_config.save_path}")
 
     

@@ -1614,7 +1614,7 @@ class StableDiffusionControlNetPipeline(
         # print(f"Final image min: {loss_image.min()}")
         # print(f"Final image shape: {loss_image.shape}")
 
-        uncertainty_loss, reg_loss, loss, uncertainty_img = loss_fct(final_image, real_image.cuda(), annotation, seg_model, 
+        uncertainty_loss, reg_loss, loss, uncertainty_img = loss_fct(loss_image, real_image.cuda(), annotation, seg_model, 
                                                    optimization_arguments["uncertainty_loss_fct"], 
                                                    optimization_arguments["reg_fct"], 
                                                    optimization_arguments["w_loss"], 
@@ -1629,7 +1629,7 @@ class StableDiffusionControlNetPipeline(
         # loss, uncertainty_img = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = optimization_arguments['w_pixel'], w_class = optimization_arguments['w_class'], visualize = (optimization_arguments['wandb_mode'] == "detailed"))
         
 
-        title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
+        title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss}"
         for k in optimization_arguments.keys(): 
             title += f"\n{k}: {optimization_arguments[k]}"
 
@@ -1643,7 +1643,7 @@ class StableDiffusionControlNetPipeline(
             s = 5
             fig, axis = plt.subplots(5, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])
-            plt.suptitle(f"Loss = {loss.item()} \nLoss Uncertainty = {uncertainty_loss.item()}\nLoss Regularization = {reg_loss.item()}", fontsize=20)
+            plt.suptitle(f"Loss = {loss} \nLoss Uncertainty = {uncertainty_loss}\nLoss Regularization = {reg_loss}", fontsize=20)
             axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
             axis[0].imshow(gt_mask[0].permute(1,2,0))
 
@@ -1685,4 +1685,4 @@ class StableDiffusionControlNetPipeline(
             wandb.log({f"Final Images": wandb.Image(plt)}) # TODO 
             plt.close()
 
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item(), uncertainty_loss.item(), reg_loss.item()
+        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss, uncertainty_loss, reg_loss
