@@ -50,6 +50,7 @@ from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 from Scheduler import UniPCMultistepScheduler
 
 from Utils import totensor_transform
+from Loss import loss_fct, get_prediction
 
 
 from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMixin, TextualInversionLoaderMixin
@@ -58,7 +59,6 @@ import cv2
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import numpy as np
 
-from Uncertainties import get_prediction
 
 BASIC_VIS_STEPS = 1 #20
 
@@ -1294,7 +1294,7 @@ class StableDiffusionControlNetPipeline(
                     final_image = None
                     # START OPTIMIZATION 
                     if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i <= optimization_arguments['end_t'])):
-                        with torch.enable_grad(): #torch.no_grad(): #
+                        with torch.enable_grad(): # torch.no_grad(): #
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
                             optim_timesteps = timesteps[:(i+1)]
@@ -1398,16 +1398,12 @@ class StableDiffusionControlNetPipeline(
                                                                     t, # current time step 
                                                                     latents_norm, 
                                                                     **extra_step_kwargs, return_dict=False)[0]
-                                # END PROJECTION TO IMAGE SPACE
 
                                 final_image = self.vae.decode(final_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
                                 final_image = self.image_processor.denormalize(final_image)
 
-                                # print(f"image type: {type(final_image)}")
-                                # print(f"image max: {final_image.max()}")
-                                # print(f"image min: {final_image.min()}")
-                                # print(f"image shape: {final_image.shape}")
-
+                                # END PROJECTION TO IMAGE SPACE
+                            
 
                                 """with torch.no_grad():
                                     plt.figure()
@@ -1417,10 +1413,35 @@ class StableDiffusionControlNetPipeline(
                                 
                                 # TODO why do I need to put unet to cuda again? 
                                 self.unet.to("cuda")
-                                loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model, optimization_arguments['w_pixel'], optimization_arguments['w_class'])
 
-                                # loss.backward()
-                                # accelerator.backward(loss, retain_graph = True)
+                                # compute loss
+                                print(f"\nFinal image type: {type(final_image)}")
+                                print(f"Final image max: {final_image.max()}")
+                                print(f"Final image min: {final_image.min()}")
+                                print(f"Final image shape: {final_image.shape}")
+                                print(f"Final image device: {final_image.is_cuda}")
+                                print(f"\nReal image type: {type(real_image)}")
+                                print(f"Real image max: {real_image.max()}")
+                                print(f"Real image min: {real_image.min()}")
+                                print(f"Real image shape: {real_image.shape}")
+                                print(f"Real image device: {real_image.is_cuda}")
+                                print(f"\nannotation type: {type(annotation)}")
+                                print(f"annotation max: {annotation.max()}")
+                                print(f"annotation min: {annotation.min()}")
+                                print(f"annotation shape: {annotation.shape}")
+                                print(f"annotation device: {annotation.is_cuda}")
+
+                                
+                                loss, _ = loss_fct(final_image, real_image.cuda(), annotation, seg_model, 
+                                                   optimization_arguments["uncertainty_loss_fct"], 
+                                                   optimization_arguments["reg_fct"], 
+                                                   optimization_arguments["w_loss"], 
+                                                   optimization_arguments["w_reg"], 
+                                                   base_segments = optimization_arguments["base_segments"], 
+                                                   normalize = optimization_arguments["norm_loss"], 
+                                                   visualize = False)
+                                # loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model, optimization_arguments['w_pixel'], optimization_arguments['w_class'])
+
                                 with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
                                     scaler.scale(loss).backward()
 
@@ -1509,13 +1530,9 @@ class StableDiffusionControlNetPipeline(
                         noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
                     # compute the previous noisy sample x_t -> x_t-1
-                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-                    # print(f"Scheduler: {self.scheduler}")
-
-        
+                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]        
 
                     with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
-
                         if((optimization_arguments["wandb_mode"] == "detailed") and ((((i-1) % VIS_STEPS) == 0) or (i == (num_inference_steps-1)))):
                             if(i == (num_inference_steps-1)):
                                 vis_idx = -1
@@ -1591,27 +1608,26 @@ class StableDiffusionControlNetPipeline(
         end_time_image = time.time()
         elapsed_time = end_time_image - start_time_image # elapsed time in seconds
 
-
-        # log final loss on image
-        # loss_image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
-        # loss_image = self.image_processor.denormalize(loss_image)
-
-        # axis[0, i//VIS_STEPS].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
-        # if(optimization_arguments['visualize']):
-            # axis[-1].imshow(loss_image[0].cpu().squeeze().permute(1,2,0))
-
         loss_image = totensor_transform(image[0]).unsqueeze(0).cuda()
         # print(f"Final image type: {type(loss_image)}")
         # print(f"Final image max: {loss_image.max()}")
         # print(f"Final image min: {loss_image.min()}")
         # print(f"Final image shape: {loss_image.shape}")
 
-        loss_classentropy, _ = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = 0, w_class = 1, visualize = False)
-        loss_pixelentropy, _ = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = 1, w_class = 0, visualize = False)
-        loss, uncertainty_img = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = optimization_arguments['w_pixel'], w_class = optimization_arguments['w_class'], visualize = (optimization_arguments['wandb_mode'] == "detailed"))
-        
-        # loss_image = image[0].cpu().squeeze().permute(1,2,0)
+        uncertainty_loss, reg_loss, loss, uncertainty_img = loss_fct(final_image, real_image.cuda(), annotation, seg_model, 
+                                                   optimization_arguments["uncertainty_loss_fct"], 
+                                                   optimization_arguments["reg_fct"], 
+                                                   optimization_arguments["w_loss"], 
+                                                   optimization_arguments["w_reg"], 
+                                                   base_segments = optimization_arguments["base_segments"], 
+                                                   normalize = optimization_arguments["norm_loss"], 
+                                                   visualize = True, 
+                                                   by_value=True)
 
+        # loss_classentropy, _ = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = 0, w_class = 1, visualize = False)
+        # loss_pixelentropy, _ = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = 1, w_class = 0, visualize = False)
+        # loss, uncertainty_img = optimization_arguments["loss"](loss_image, real_image, annotation, seg_model, w_pixel = optimization_arguments['w_pixel'], w_class = optimization_arguments['w_class'], visualize = (optimization_arguments['wandb_mode'] == "detailed"))
+        
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss.item()}"
         for k in optimization_arguments.keys(): 
@@ -1627,7 +1643,7 @@ class StableDiffusionControlNetPipeline(
             s = 5
             fig, axis = plt.subplots(5, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])
-            plt.suptitle(f"Loss = {loss.item()} \nLoss Class Entropy = {loss_classentropy.item()}\nLoss Pixel Entropy = {loss_pixelentropy.item()}", fontsize=20)
+            plt.suptitle(f"Loss = {loss.item()} \nLoss Uncertainty = {uncertainty_loss.item()}\nLoss Regularization = {reg_loss.item()}", fontsize=20)
             axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
             axis[0].imshow(gt_mask[0].permute(1,2,0))
 
@@ -1650,9 +1666,6 @@ class StableDiffusionControlNetPipeline(
             axis[4].set_title("Uncertainty Heatmap")
             im = axis[4].imshow(uncertainty_img.squeeze(), cmap="Reds")
 
-            
-
-            # TODO add image of prediction
             for ax in axis: 
                 ax.set_axis_off()
 
@@ -1665,7 +1678,6 @@ class StableDiffusionControlNetPipeline(
             cbar = fig.colorbar(im, cax=axins, orientation="horizontal", ticks=[uncertainty_img.min(), uncertainty_img.max()])
             cbar.ax.set_axis_on()
             cbar.ax.tick_params(labelsize=20)
-            #
             #cbar.ax.set_xticklabels([uncertainty_img.min(), uncertainty_img.max()])
 
             
@@ -1673,4 +1685,4 @@ class StableDiffusionControlNetPipeline(
             wandb.log({f"Final Images": wandb.Image(plt)}) # TODO 
             plt.close()
 
-        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item(), loss_classentropy.item(), loss_pixelentropy.item()
+        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss.item(), uncertainty_loss.item(), reg_loss.item()

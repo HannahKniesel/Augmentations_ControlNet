@@ -17,9 +17,9 @@ import ade_config
 from Datasets import Ade20kDataset
 from Utils import get_name, device
 from CNPipeline import StableDiffusionControlNetPipeline as SDCNPipeline_Latents
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, mse_loss
+from Uncertainties import entropy_loss
+from Regularization import mse_reg, kld_reg
 
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, segment_entropy_loss, min_max_segment_entropy_loss, kl_loss, mse_loss_ours
 
 
 # TODO load dotenv
@@ -46,12 +46,20 @@ if __name__ == "__main__":
     # Args Parser
     parser = argparse.ArgumentParser(description='Augmentations')
 
-    # General Parameters
+    # Logging Parameters
     parser.add_argument('--experiment_name', type = str, default="")
-    parser.add_argument('--data_to_augment', type = str, default="./data/ade/ADEChallengeData2016/")
-    parser.add_argument('--num_augmentations', type = int, default=1)
+    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed"], default = "standard")
+    parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--seed', type = int, default=7353)
 
+    # Data Parameters
+    parser.add_argument('--data_to_augment', type = str, default="./data/ade/ADEChallengeData2016/")
+    parser.add_argument('--num_augmentations', type = int, default=1)
+    parser.add_argument('--start_idx', type = int, default=0)
+    parser.add_argument('--end_idx', type = int, default=-1)
+    parser.add_argument('--start_idx_aug', type = int, default=0)
+
+    # ControlNet Parameters
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0", "2.1"], default="1.1")
     parser.add_argument('--finetuned_checkpoint', type=str, default="")
     parser.add_argument('--prompt_type', type=str, choices=["gt", "blip2", "llava", "llava_gt", "short_llava_gt", "no_prompts"], default="gt")
@@ -61,70 +69,43 @@ if __name__ == "__main__":
     parser.add_argument('--guidance_scale', type=float, default=7.5)
     parser.add_argument('--inference_steps', type=int, default=80)
 
-    parser.add_argument('--start_idx', type = int, default=0)
-    parser.add_argument('--end_idx', type = int, default=-1)
-    parser.add_argument('--start_idx_aug', type = int, default=0)
-
-    # optimization parameters
+    # Optimization Parameters
     parser.add_argument('--optimize', action='store_true')
-    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed"], default = "standard")
-    parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--lr', type=float, default=1000.)
     parser.add_argument('--iters', type=int, default=1)
     parser.add_argument('--optimizer', type=str, choices=["adam", "sgd"], default="sgd")
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
-    parser.add_argument('--loss', type=str, choices=["brightness", "entropy", "mcdropout", "smu", "lmu", "lcu", "mse", "segment_entropy", "segment_based_entropy", "kl_loss", "mse_loss"], default="segment_based_entropy")
-    parser.add_argument('--w_pixel', type=float, default=1.0)
-    parser.add_argument('--w_class', type=float, default=1.0)
+    parser.add_argument('--uncertainty_loss_fct', type=str, choices=["entropy"], default="entropy")
+    parser.add_argument('--reg_fct', type=str, choices=["mse", "kld"], default="mse")
+    parser.add_argument('--base_segments', type=str, choices=["gt", "real"], default="gt")
+    parser.add_argument('--norm_loss', action='store_true')
+    parser.add_argument('--w_loss', type=float, default=1.0)
+    parser.add_argument('--w_reg', type=float, default=1.0)
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
     parser.add_argument('--cos_annealing', action='store_true')
-
-
     parser.add_argument('--mixed_precision', type=str, choices=["bf16", "fp16"], default="bf16")
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    if(args.loss == "brightness"):
-        loss = loss_brightness
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "entropy"):
-        loss = entropy_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "mcdropout"):
-        loss = mcdropout_loss
-        args.model_path = args.model_path + "train_model_scripted.pt"
-    elif(args.loss == "smu"):
-        loss = smu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "lmu"):
-        loss = lmu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "lcu"):
-        loss = lcu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"    
-    elif(args.loss == "mse"):
-        loss = mse_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "segment_entropy"):
-        loss = segment_entropy_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "segment_based_entropy"):
-        loss = min_max_segment_entropy_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "kl_loss"):
-        loss = kl_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.loss == "mse_loss"):
-        loss = mse_loss_ours
+    # Loss
+    if(args.uncertainty_loss_fct == "entropy"):
+        uncertainty_loss_fct = entropy_loss
         args.model_path = args.model_path + "eval_model_scripted.pt"
     else: 
-        print(f"ERROR:: Could not match the defined loss {args.loss}")
+        print(f"ERROR:: Could not match the defined uncertainty_loss_fct {args.uncertainty_loss_fct}")
 
+    # Regularization
+    if(args.reg_fct == "mse"):
+        reg_fct = mse_reg
+    elif(args.reg_fct == "kld"):
+        reg_fct = kld_reg
+    else: 
+        print(f"ERROR:: Could not match the defined reg_fct {args.reg_fct}")
 
-
+    # prompt mode
     if(args.prompt_type == "no_prompts"):
         args.additional_prompt = ""
         args.negative_prompt = ""
@@ -144,9 +125,12 @@ if __name__ == "__main__":
                             "optim_every_n_steps": args.optim_every_n_steps,
                             "start_t": args.start_t, 
                             "end_t": args.end_t,
-                            "loss": loss, 
-                            "w_pixel": args.w_pixel,
-                            "w_class": args.w_class,
+                            "uncertainty_loss_fct": uncertainty_loss_fct, 
+                            "reg_fct": reg_fct,
+                            "w_loss": args.w_loss,
+                            "w_reg": args.w_reg,
+                            "base_segments": args.base_segments,
+                            "norm_loss": args.norm_loss,
                             "mixed_precision": args.mixed_precision,
                             "cos_annealing": args.cos_annealing}
     
@@ -155,10 +139,12 @@ if __name__ == "__main__":
         os.environ['WANDB_PROJECT']= args.wandb_project
         """group = "Optimization" if optimization_params['do_optimize'] else "Base"
         if  optimization_params['do_optimize']: """
-        group = args.loss
+        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}"
+        if(args.norm_loss):
+            group += "-norm"
         wandb.init(config = optimization_params, reinit=True, group = group, mode="online")
         # wandb_name = self.wandb_name+"_"+str(wandb.run.id)
-        name = f"{args.experiment_name}_{args.loss}_{wandb.run.id}"
+        name = f"{args.experiment_name}_{group}_{wandb.run.id}"
         if(args.optimize):
             name = f"{name}_optim"
         
@@ -228,8 +214,8 @@ if __name__ == "__main__":
     mean_time_augmentation = []
     total_nsfw = 0
     avg_loss = []
-    avg_loss_classentropy = []
-    avg_loss_pixelentropy = []
+    avg_loss_uncertainty = []
+    avg_loss_regularization = []
 
     # iterate over dataset
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
@@ -245,7 +231,7 @@ if __name__ == "__main__":
             # TODO include new pipeline
             generator = torch.manual_seed(0 + aug_index)
             aug_index += 1
-            output, elapsed_time, loss, loss_classentropy, loss_pixelentropy = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
+            output, elapsed_time, loss, loss_uncertainty, loss_regularization = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
                                     controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
@@ -270,13 +256,13 @@ if __name__ == "__main__":
             augmented = output.images
             num_nsfw = 0
 
-            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Class Entropy = {loss_classentropy} | Loss Pixel Entropy = {loss_pixelentropy}")
+            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Uncertainty = {loss_uncertainty} | Loss Regularization = {loss_regularization}")
 
             total_nsfw += num_nsfw
             augmentations.extend(augmented)
             avg_loss.append(loss)
-            avg_loss_classentropy.append(loss_classentropy)
-            avg_loss_pixelentropy.append(loss_pixelentropy)
+            avg_loss_uncertainty.append(loss_uncertainty)
+            avg_loss_regularization.append(loss_regularization)
 
 
             mean_time_augmentation.append(elapsed_time)
@@ -299,8 +285,8 @@ if __name__ == "__main__":
         remainingtime_img_str = str(timedelta(seconds=remaining_time))
         print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | \
               Avg Loss = {np.mean(avg_loss)} | \
-              Avg Loss Classentropy = {np.mean(avg_loss_classentropy)} | \
-              Avg Loss Pixelentropy = {np.mean(avg_loss_pixelentropy)} | \
+              Avg Loss Uncertainty = {np.mean(avg_loss_uncertainty)} | \
+              Avg Loss Regularization = {np.mean(avg_loss_regularization)} | \
               Number of augmentations = {len(augmentations)} | \
               Time for image = {elapsedtime_img_str} | \
               Avg time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | \
@@ -311,8 +297,8 @@ if __name__ == "__main__":
         
         if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
-                    "AvgLoss Class Entropy": np.mean(avg_loss_classentropy), 
-                    "AvgLoss Pixel Entropy": np.mean(avg_loss_pixelentropy), 
+                    "AvgLoss Uncertainty": np.mean(avg_loss_uncertainty), 
+                    "AvgLoss Regularization": np.mean(avg_loss_regularization), 
                     "AvgTime Augmentation": np.mean(mean_time_augmentation)})
 
     end_time = time.time()

@@ -101,6 +101,14 @@ class Ade20kDataset(AbstractAde20k):
             shutil.copy(annotation_path, ade_config.save_path+ade_config.annotations_folder+name+ade_config.annotations_format)
             shutil.copy(path, ade_config.save_path+ade_config.images_folder+name+ade_config.images_format)
 
+        """import pdb 
+        pdb.set_trace()
+        print(f"type: {type(init_image)}")
+        print(f"max: {init_image.max()}")
+        print(f"min: {init_image.min()}")
+        print(f"shape: {init_image.shape}")"""
+        init_image = init_image.transpose(2,0,1)/255
+
         return init_image, condition, annotation, prompt, path
     
 
