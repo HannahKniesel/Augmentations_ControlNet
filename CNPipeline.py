@@ -1415,7 +1415,7 @@ class StableDiffusionControlNetPipeline(
                                 self.unet.to("cuda")
 
                                 # compute loss
-                                print(f"\nFinal image type: {type(final_image)}")
+                                """print(f"\nFinal image type: {type(final_image)}")
                                 print(f"Final image max: {final_image.max()}")
                                 print(f"Final image min: {final_image.min()}")
                                 print(f"Final image shape: {final_image.shape}")
@@ -1429,9 +1429,7 @@ class StableDiffusionControlNetPipeline(
                                 print(f"annotation max: {annotation.max()}")
                                 print(f"annotation min: {annotation.min()}")
                                 print(f"annotation shape: {annotation.shape}")
-                                print(f"annotation device: {annotation.is_cuda}")
-
-                                
+                                print(f"annotation device: {annotation.is_cuda}")"""                                
                                 loss, _ = loss_fct(final_image, real_image.cuda(), annotation, seg_model, 
                                                    optimization_arguments["uncertainty_loss_fct"], 
                                                    optimization_arguments["reg_fct"], 
@@ -1440,7 +1438,6 @@ class StableDiffusionControlNetPipeline(
                                                    base_segments = optimization_arguments["base_segments"], 
                                                    normalize = optimization_arguments["norm_loss"], 
                                                    visualize = False)
-                                # loss,_ = optimization_arguments["loss"](final_image, real_image, annotation, seg_model, optimization_arguments['w_pixel'], optimization_arguments['w_class'])
 
                                 with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
                                     scaler.scale(loss).backward()

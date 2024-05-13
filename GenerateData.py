@@ -146,9 +146,7 @@ if __name__ == "__main__":
         if  optimization_params['do_optimize']: """
         wandb.init(config = optimization_params, reinit=True, group = group, mode="online")
         # wandb_name = self.wandb_name+"_"+str(wandb.run.id)
-        name = f"{args.experiment_name}_{group}_{wandb.run.id}"
-        if(args.optimize):
-            name = f"{name}_optim"
+        name = f"{args.experiment_name}/{group}_{wandb.run.id}"
         wandb.run.name = name
     start_time = time.time()
 
