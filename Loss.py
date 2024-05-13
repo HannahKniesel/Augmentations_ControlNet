@@ -83,3 +83,22 @@ def loss_fct(generated_image, real_image, gt_segments, model, uncertainty_loss_f
     
     return loss_value, uncertainty_img
     
+
+def uncertaintyloss_fct(generated_image, model, uncertainty_loss_fct, visualize = False):
+    r"""
+        Compute uncertainty loss only
+
+        Args:
+            generated_image (`torch.cuda.FloatTensor`): 
+                generated image from guided inference process. Shape = 1 x 3 x W x H
+            model (`torch.cuda.JitModule`): 
+                segmentation model for uncertainty computation
+            uncertainty_loss_fct (`Callable`): 
+                Uncertainty loss for loss computation
+            visualize (`bool`, optional): 
+                weather to visualize the entropy
+                Default = False
+    """
+    logits = forward_model(generated_image, model) # bs x c x h x w
+    loss_value, uncertainty_img = uncertainty_loss_fct(logits, visualize = visualize) 
+    return loss_value, uncertainty_img

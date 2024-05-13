@@ -33,6 +33,30 @@ def mse_reg(logits, segments, normalize = True):
     
     return mse_value
 
+
+
+def kl_divergence(p, q):
+    return torch.sum(p * torch.log(p / q), dim=1)
+
+def pairwise_kld(tensor):
+    bs, n = tensor.shape
+    pairwise_kld_matrix = torch.zeros(bs, bs)
+
+    for i in range(bs):
+        for j in range(bs):
+            pairwise_kld_matrix[i, j] = torch.sum(kl_divergence(tensor[i], tensor[j]))
+
+    return pairwise_kld_matrix
+
+
+def pairwise_kld_vectorized(tensor):
+    bs, n = tensor.shape
+    expanded_tensor = tensor.unsqueeze(1)  # Add an extra dimension for broadcasting
+    expanded_tensor = expanded_tensor.expand(bs, bs, n)  # Broadcast to create pairs
+    pairwise_kld_matrix = torch.sum(kl_divergence(expanded_tensor, expanded_tensor.transpose(0, 1)), dim=2)
+
+    return pairwise_kld_matrix
+
 def kld_reg(logits, segments, normalize = True):
     class_indices = np.unique(segments)
     kld_value = 0
@@ -42,11 +66,12 @@ def kld_reg(logits, segments, normalize = True):
         class_logits = logits[:,:,mask]
         class_logits = class_logits.squeeze().permute(1,0)
         # the pairwise KLD between the pixel prediction should be minimized such that all predictions predict the same class within one segment.
-        dist = F.softmax(class_logits, dim = 1)
-        reps = dist.shape[0]
-        p_dist = torch.Tensor.repeat(dist, repeats = (reps,1))
-        q_dist = torch.repeat_interleave(dist, repeats = torch.tensor([reps]), dim = 0)
-        kld_segment_value = torch.sum(p_dist * torch.log(p_dist/q_dist), dim = 1)
+        # dist = F.softmax(class_logits, dim = 1)
+        # reps = dist.shape[0]
+        # p_dist = torch.Tensor.repeat(dist, repeats = (reps,1))
+        # q_dist = torch.repeat_interleave(dist, repeats = torch.tensor([reps]).to("cuda"), dim = 0)
+        # kld_segment_value = torch.sum(p_dist * torch.log(p_dist/q_dist), dim = 1)
+        kld_segment_value = pairwise_kld(F.softmax(class_logits, dim = 1))
 
         if(normalize):
             kld_value += torch.sum(mask) * kld_segment_value
@@ -61,8 +86,10 @@ def kld_reg(logits, segments, normalize = True):
 
 
 
+
+
 # p should have shape of BS, dim (with BS being the distributions to compare and dim the axis which sums to 1 for every dist )
-def pairwise_kld(p):
+def pairwise_kld_vectorized(p):
     dist = F.softmax(p, dim = 1)
 
     reps = dist.shape[0]

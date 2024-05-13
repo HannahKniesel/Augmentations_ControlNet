@@ -12,8 +12,9 @@ import cv2
 from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
 from Utils import read_txt, index2color_annotation, device, resize_transform, totensor_transform
 from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, min_max_segment_entropy_loss, get_prediction
+from Loss import uncertaintyloss_fct
 
-
+# Visualizes different generated datasets with their corresponding uncertainty. 
 
 if __name__ == "__main__":
 
@@ -143,7 +144,8 @@ if __name__ == "__main__":
                     print(annotation_indices.shape)
                     print(compute_img.shape)
 
-                    uncertainty,uncertainty_img = loss(compute_img.to(device), None, annotation_indices, seg_model, visualize = True)
+                    # uncertainty,uncertainty_img = loss(compute_img.to(device), None, annotation_indices, seg_model, visualize = True)
+                    uncertainty,uncertainty_img = uncertaintyloss_fct(compute_img.to(device), seg_model, loss, visualize = True)
 
                     #uncertainty, uncertainty_img = loss(compute_img.to(device), None, None, seg_model, visualize = True)
                     uncertainty_imgs.append(uncertainty_img.squeeze())

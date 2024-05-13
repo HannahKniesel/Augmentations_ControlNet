@@ -1611,7 +1611,7 @@ class StableDiffusionControlNetPipeline(
         # print(f"Final image min: {loss_image.min()}")
         # print(f"Final image shape: {loss_image.shape}")
 
-        uncertainty_loss, reg_loss, loss, uncertainty_img = loss_fct(loss_image, real_image.cuda().to(weight_dtype), annotation, seg_model, 
+        uncertainty_loss, reg_loss, loss, uncertainty_img = loss_fct(loss_image, real_image.cuda(), annotation, seg_model, 
                                                    optimization_arguments["uncertainty_loss_fct"], 
                                                    optimization_arguments["reg_fct"], 
                                                    optimization_arguments["w_loss"], 
