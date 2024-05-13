@@ -10,7 +10,7 @@ import torch
 
 from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
 from Utils import read_txt, index2color_annotation, device, resize_transform, totensor_transform
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss
+from Uncertainties import entropy_loss
 
 
 if __name__ == "__main__":
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     parser.add_argument('--sampling_pool_path', type = str, default="./data/ade_augmented/uncertainty/sampling_pool/")
     parser.add_argument('--save_to', type = str, default="")
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
-    parser.add_argument('--uncertainty', type=str, choices = ["mcdropout", "lcu", "lmu", "smu", "entropy"], default="mcdropout")
+    parser.add_argument('--uncertainty_loss', type=str, choices = ["entropy"], default="mcdropout")
     parser.add_argument('--start_idx', type=int, default=0)
     parser.add_argument('--end_idx', type=int, default=10)
 
@@ -36,23 +36,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    if(args.uncertainty == "entropy"):
+    if(args.uncertainty_loss == "entropy"):
         loss = entropy_loss
         args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty == "mcdropout"):
-        loss = mcdropout_loss
-        args.model_path = args.model_path + "train_model_scripted.pt"
-    elif(args.uncertainty == "smu"):
-        loss = smu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty == "lmu"):
-        loss = lmu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty == "lcu"):
-        loss = lcu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"    
+    else:
+        print(f"ERROR::Loss {args.uncertainty_loss} is not implemented.")
+
     
-    if(args.uncertainty != ""):
+    if(args.uncertainty_loss != ""):
         seg_model = torch.jit.load(args.model_path)
         seg_model = seg_model.to(device)
     else: 
@@ -126,7 +117,7 @@ if __name__ == "__main__":
         for col, (synthetic_img, uncertainty_img, uncertainty) in enumerate(zip(synthetic_imgs, uncertainty_imgs, uncertainties)):
             axis[0,col].imshow(synthetic_img)
             axis[1,col].imshow((uncertainty_img-minimum)/(maximum-minimum), cmap="rainbow")
-            axis[0,col].set_title(f"{args.uncertainty} = {uncertainty:.4f}",fontsize=24)
+            axis[0,col].set_title(f"{args.uncertainty_loss} = {uncertainty:.4f}",fontsize=24)
 
         plt.tight_layout()
         plt.savefig(args.save_to + "/" + dp_name + ".jpg")

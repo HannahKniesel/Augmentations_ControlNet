@@ -11,7 +11,8 @@ import cv2
 
 from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
 from Utils import read_txt, index2color_annotation, device, resize_transform, totensor_transform
-from Uncertainties import loss_brightness, entropy_loss, mcdropout_loss, smu_loss, lmu_loss, lcu_loss, min_max_segment_entropy_loss, get_prediction
+from Uncertainties import entropy_loss
+from Loss import get_prediction
 
 
 
@@ -29,33 +30,20 @@ if __name__ == "__main__":
     parser.add_argument('--n_images', type = int, default=20)
     parser.add_argument('--save_to', type = str, default="")
     parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
-    parser.add_argument('--uncertainty', type=str, choices = ["", "mcdropout", "lcu", "lmu", "smu", "entropy", "segment_based_entropy"], default="mcdropout")
+    parser.add_argument('--uncertainty_loss', type=str, choices = ["", "entropy"], default="entropy")
 
 
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    if(args.uncertainty == "entropy"):
+    if(args.uncertainty_loss == "entropy"):
         loss = entropy_loss
         args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty == "mcdropout"):
-        loss = mcdropout_loss
-        args.model_path = args.model_path + "train_model_scripted.pt"
-    elif(args.uncertainty == "smu"):
-        loss = smu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty == "lmu"):
-        loss = lmu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty == "lcu"):
-        loss = lcu_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"   
-    elif(args.uncertainty == "segment_based_entropy"): 
-        loss = min_max_segment_entropy_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"   
+    else: 
+        print(f"ERROR::Loss {args.uncertainty_loss} is not implemented.")
 
     
-    if(args.uncertainty != ""):
+    if(args.uncertainty_loss != ""):
         seg_model = torch.jit.load(args.model_path)
         seg_model = seg_model.to(device)
     else: 
@@ -103,7 +91,7 @@ if __name__ == "__main__":
         uncertainty_imgs = []
         uncertainties = []
         add_col = 1
-        if(args.uncertainty == ""):
+        if(args.uncertainty_loss == ""):
             add_col = 0
             uncertainty = ""
         
@@ -131,7 +119,7 @@ if __name__ == "__main__":
                 synthetic_path = os.path.join(Path(real_path).parent,  "_".join(Path(real_path).stem.split("_")[:-1])+"_0001"+images_format)
                 synthetic_img = np.array(Image.open(synthetic_path))
 
-                if(args.uncertainty != ""):
+                if(args.uncertainty_loss != ""):
                     compute_img,_ = resize_transform(Image.open(synthetic_path)) # resize shortest edge to 512
                     compute_img = np.array(compute_img)
                     if(len(compute_img.shape) != 3):
@@ -193,13 +181,13 @@ if __name__ == "__main__":
 
 
             # plot uncertainty heatmap
-            if(args.uncertainty != ""):
+            if(args.uncertainty_loss != ""):
                 maximum = np.concatenate(uncertainty_imgs).max()
                 minimum = np.concatenate(uncertainty_imgs).min()
 
                 for c, (uncertainty_img, uncertainty) in enumerate(zip(uncertainty_imgs, uncertainties)): 
                     axis[6,c].imshow((uncertainty_img-minimum)/(maximum-minimum), cmap="Reds") #, cmap="rainbow")
-                    axis[6,c].set_title(f"{args.uncertainty} = {uncertainty:.4f}",fontsize=24) 
+                    axis[6,c].set_title(f"{args.uncertainty_loss} = {uncertainty:.4f}",fontsize=24) 
 
             for axs in axis: 
                 for a in axs: 

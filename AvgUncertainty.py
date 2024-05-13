@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # General Parameters
     parser.add_argument('--experiment_name', type = str, default="")
     parser.add_argument('--wandb_project', type=str, default="")
-    parser.add_argument('--uncertainty', type=str, nargs="+", choices=["entropy", "segment_based_entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["mc_dropout"])
+    parser.add_argument('--uncertainty_loss', type=str, nargs="+", choices=["entropy", "mc_dropout", "lcu", "lmu", "smu"], default=["entropy"])
     parser.add_argument('--w_pixel', type=float, default=0.0)
     parser.add_argument('--w_class', type=float, default=1.0)
     parser.add_argument('--data_path', type=str, default="./data/ade_augmented/finetuned_cn10/") 
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    if("mc_dropout" in args.uncertainty):
+    if("mc_dropout" in args.uncertainty_loss):
         args.model_path = args.model_path + "/train_model_scripted.pt"
         print("WARNING:: MCDropout uncertainty detected. Open model in train mode.")
     else: 
@@ -80,12 +80,12 @@ if __name__ == "__main__":
                 print(f"INFO::Model not found in uncertainties. Make new entry.")
             else: 
                 to_remove = []
-                for k in args.uncertainty: 
+                for k in args.uncertainty_loss: 
                     if k in results[seg_model_name].keys():
                         print(f"WARNING:: There are already entries for {k} in the existing dict ({results[seg_model_name][k]}). Do not overwrite these entries.")
                         to_remove.append(k)
                     
-                args.uncertainty = [k for k in args.uncertainty if not(k in to_remove)]
+                args.uncertainty_loss = [k for k in args.uncertainty_loss if not(k in to_remove)]
 
     except:
         print(f"INFO::Could not find logged uncertainties at {args.data_path}/uncertainties.txt. Hence make new file.")
@@ -117,42 +117,42 @@ if __name__ == "__main__":
                     
 
             init_image = init_image.to(device)
-            if("mc_dropout" in args.uncertainty):
+            if("mc_dropout" in args.uncertainty_loss):
                 mc_dropout = float(mcdropout_loss(init_image, None, None, seg_model, mc_samples = 5)[0].cpu())  #generated_image, real_images, gt_mask, model, mc_samples = 5, visualize = False
                 try: 
                     results[seg_model_name]["mc_dropout"].append(mc_dropout)
                 except: 
                     results[seg_model_name]["mc_dropout"] = [mc_dropout]
 
-            if("entropy" in args.uncertainty):
+            if("entropy" in args.uncertainty_loss):
                 entropy = float(entropy_loss(init_image, None, seg_model)[0].cpu())    # generated_image, real_images, model,
                 try: 
                     results[seg_model_name]["entropy"].append(entropy)
                 except: 
                     results[seg_model_name]["entropy"] = [entropy]
 
-            if("segment_based_entropy" in args.uncertainty):
+            if("segment_based_entropy" in args.uncertainty_loss):
                 entropy = float(min_max_segment_entropy_loss(init_image, None, annotation, seg_model, args.w_pixel, args.w_class)[0].cpu())    # generated_image, real_images, model,
                 try: 
                     results[seg_model_name]["segment_based_entropy"].append(entropy)
                 except: 
                     results[seg_model_name]["segment_based_entropy"] = [entropy]
 
-            if("lcu" in args.uncertainty):
+            if("lcu" in args.uncertainty_loss):
                 lcu = float(lcu_loss(init_image, None, None, seg_model)[0].cpu())  
                 try: 
                     results[seg_model_name]["lcu"].append(lcu)
                 except: 
                     results[seg_model_name]["lcu"] = [lcu]
 
-            if("lmu" in args.uncertainty):
+            if("lmu" in args.uncertainty_loss):
                 lmu = float(lmu_loss(init_image, None, seg_model)[0].cpu())
                 try: 
                     results[seg_model_name]["lmu"].append(lmu)
                 except: 
                     results[seg_model_name]["lmu"] = [lmu]
             
-            if("smu" in args.uncertainty):
+            if("smu" in args.uncertainty_loss):
                 smu = float(smu_loss(init_image, None, seg_model)[0].cpu())
                 try: 
                     results[seg_model_name]["smu"].append(smu)
@@ -160,7 +160,7 @@ if __name__ == "__main__":
                     results[seg_model_name]["smu"] = [smu]
 
     print("INFO::Compute mean and std...")
-    for key in args.uncertainty: #results[seg_model_name]: 
+    for key in args.uncertainty_loss: #results[seg_model_name]: 
         values = results[seg_model_name][key]
         mean_val = np.mean(values)
         std_val = np.std(values)
