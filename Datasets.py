@@ -107,7 +107,7 @@ class Ade20kDataset(AbstractAde20k):
         print(f"max: {init_image.max()}")
         print(f"min: {init_image.min()}")
         print(f"shape: {init_image.shape}")"""
-        init_image = init_image.transpose(2,0,1)/255
+        init_image = (init_image.transpose(2,0,1)/255).astype(np.float32)
 
         return init_image, condition, annotation, prompt, path
     

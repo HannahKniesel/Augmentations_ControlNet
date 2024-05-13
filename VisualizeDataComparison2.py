@@ -14,7 +14,7 @@ from Utils import read_txt, index2color_annotation, device, resize_transform, to
 from Uncertainties import entropy_loss
 from Loss import get_prediction
 
-
+# Visualizes different generated datasets with their corresponding uncertainty. 
 
 if __name__ == "__main__":
 
@@ -131,7 +131,8 @@ if __name__ == "__main__":
                     print(annotation_indices.shape)
                     print(compute_img.shape)
 
-                    uncertainty,uncertainty_img = loss(compute_img.to(device), None, annotation_indices, seg_model, visualize = True)
+                    # uncertainty,uncertainty_img = loss(compute_img.to(device), None, annotation_indices, seg_model, visualize = True)
+                    uncertainty,uncertainty_img = uncertaintyloss_fct(compute_img.to(device), seg_model, loss, visualize = True)
 
                     #uncertainty, uncertainty_img = loss(compute_img.to(device), None, None, seg_model, visualize = True)
                     uncertainty_imgs.append(uncertainty_img.squeeze())
