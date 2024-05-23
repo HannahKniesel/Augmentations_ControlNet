@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
-def no_reg(logits, segments, normalize = True)
+def no_reg(logits, segments, normalize = True):
     return 0
 
 

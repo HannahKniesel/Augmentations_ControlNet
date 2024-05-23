@@ -74,7 +74,7 @@ def loss_fct(generated_image, real_image, gt_segments, model, uncertainty_loss_f
         segments = torchvision.transforms.functional.resize(segments, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze() 
     else: 
         print(f"ERROR::Can not retrieve segments from {base_segments}. Define as 'gt' or 'real'.")
-    uncertainty_value, uncertainty_img = uncertainty_loss_fct(logits, visualize = visualize)
+    uncertainty_value, uncertainty_img = uncertainty_loss_fct(logits, segments, visualize = visualize)
     reg_value = reg_fct(logits, segments, normalize = normalize)
     loss_value = (w_loss * uncertainty_value) + (w_reg * reg_value)
 

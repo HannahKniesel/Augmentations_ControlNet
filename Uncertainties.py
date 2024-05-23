@@ -8,7 +8,7 @@ import ade_config
 
 
 softmax = torch.nn.Softmax(dim = 1)
-# crossentropy = torch.nn.CrossEntropyLoss(reduction="none")
+crossentropy = torch.nn.CrossEntropyLoss(reduction="none")
 
 
 """#     best = "maximum"
@@ -81,7 +81,7 @@ def entropy_fct(logits, dim = 1):
     return entropy
 
 #     best = "maximum"
-def entropy_loss(logits, visualize = False):
+def entropy_loss(logits, gt, visualize = False):
     r"""
         Compute entropy over classes (for each pixel value) --> shape: BS x W x H
 
@@ -96,6 +96,26 @@ def entropy_loss(logits, visualize = False):
     uncertainty_loss = -1*torch.mean(entropy)
     if(visualize):
         uncertainty_img = entropy.detach().cpu()
+        print(f"Uncertainty Loss: {uncertainty_loss}")
+        return uncertainty_loss, uncertainty_img
+    return uncertainty_loss, None
+
+
+def easy_fct(logits, gt, visualize = False):
+    loss = crossentropy(logits, gt.unsqueeze(0).type(torch.LongTensor).to(device))
+    uncertainty_loss = -1*torch.mean(loss)
+    if(visualize):
+        uncertainty_img = loss.detach().cpu().squeeze()
+        print(f"Uncertainty Loss: {uncertainty_loss}")
+        return uncertainty_loss, uncertainty_img
+    return uncertainty_loss, None
+
+
+def hard_fct(logits, gt, visualize = False):
+    loss = -1*crossentropy(logits, gt.unsqueeze(0).type(torch.LongTensor).to(device))
+    uncertainty_loss = -1*torch.mean(loss)
+    if(visualize):
+        uncertainty_img = loss.detach().cpu().squeeze()
         print(f"Uncertainty Loss: {uncertainty_loss}")
         return uncertainty_loss, uncertainty_img
     return uncertainty_loss, None

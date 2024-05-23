@@ -17,8 +17,8 @@ import ade_config
 from Datasets import Ade20kDataset
 from Utils import get_name, device
 from CNPipeline import StableDiffusionControlNetPipeline as SDCNPipeline_Latents
-from Uncertainties import entropy_loss
-from Regularization import mse_reg, kld_reg
+from Uncertainties import entropy_loss, easy_fct, hard_fct
+from Regularization import mse_reg, kld_reg, no_reg
 
 
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
-    parser.add_argument('--uncertainty_loss_fct', type=str, choices=["entropy"], default="entropy")
+    parser.add_argument('--uncertainty_loss_fct', type=str, choices=["entropy", "easy", "hard"], default="entropy")
     parser.add_argument('--reg_fct', type=str, choices=["mse", "kld", "none"], default="mse")
     parser.add_argument('--base_segments', type=str, choices=["gt", "real"], default="gt")
     parser.add_argument('--norm_loss', action='store_true')
@@ -94,6 +94,20 @@ if __name__ == "__main__":
     if(args.uncertainty_loss_fct == "entropy"):
         uncertainty_loss_fct = entropy_loss
         args.model_path = args.model_path + "eval_model_scripted.pt"
+    elif(args.uncertainty_loss_fct == "easy"):
+        uncertainty_loss_fct = easy_fct
+        args.model_path = args.model_path + "eval_model_scripted.pt"
+        if(args.base_segments != "gt"):
+            print(f"ERROR:: args.base_segments are defined as {args.base_segments} but should be defined as 'gt' for loss {args.uncertainty_loss_fct}")
+            import sys
+            sys.exit(-1)
+    elif(args.uncertainty_loss_fct == "hard"):
+        uncertainty_loss_fct = hard_fct
+        args.model_path = args.model_path + "eval_model_scripted.pt"
+        if(args.base_segments != "gt"):
+            print(f"ERROR:: args.base_segments are defined as {args.base_segments} but should be defined as 'gt' for loss {args.uncertainty_loss_fct}")
+            import sys
+            sys.exit(-1)
     else: 
         print(f"ERROR:: Could not match the defined uncertainty_loss_fct {args.uncertainty_loss_fct}")
 
@@ -103,7 +117,7 @@ if __name__ == "__main__":
     elif(args.reg_fct == "kld"):
         reg_fct = kld_reg
     elif(args.reg_fct == "none"): 
-        ref_fct = no_reg
+        reg_fct = no_reg
     else: 
         print(f"ERROR:: Could not match the defined reg_fct {args.reg_fct}")
 
