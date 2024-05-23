@@ -12,7 +12,8 @@ import cv2
 from ade_config import images_folder, annotations_folder, prompts_folder, annotations_format, images_format, prompts_format, palette
 from Utils import read_txt, index2color_annotation, device, resize_transform, totensor_transform
 from Uncertainties import entropy_loss
-from Loss import get_prediction
+from Loss import get_prediction, uncertaintyloss_fct
+
 
 # Visualizes different generated datasets with their corresponding uncertainty. 
 

@@ -78,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
     parser.add_argument('--uncertainty_loss_fct', type=str, choices=["entropy"], default="entropy")
-    parser.add_argument('--reg_fct', type=str, choices=["mse", "kld"], default="mse")
+    parser.add_argument('--reg_fct', type=str, choices=["mse", "kld", "none"], default="mse")
     parser.add_argument('--base_segments', type=str, choices=["gt", "real"], default="gt")
     parser.add_argument('--norm_loss', action='store_true')
     parser.add_argument('--w_loss', type=float, default=1.0)
@@ -102,6 +102,8 @@ if __name__ == "__main__":
         reg_fct = mse_reg
     elif(args.reg_fct == "kld"):
         reg_fct = kld_reg
+    elif(args.reg_fct == "none"): 
+        ref_fct = no_reg
     else: 
         print(f"ERROR:: Could not match the defined reg_fct {args.reg_fct}")
 
@@ -134,7 +136,7 @@ if __name__ == "__main__":
                             "mixed_precision": args.mixed_precision,
                             "cos_annealing": args.cos_annealing}
     if(args.optimize):
-        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}_{args.base_segments}"
+        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}_{args.base_segments}_lr-{args.lr}_i-{args.iters}"
         if(args.norm_loss):
             group += "-norm"
     else: 

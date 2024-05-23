@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+def no_reg(logits, segments, normalize = True)
+    return 0
 
 
 def mse_reg(logits, segments, normalize = True):
@@ -50,13 +52,21 @@ def pairwise_kld_greedy(tensor):
     return pairwise_kld_value
 
 # leads to CUDA OOM
-def pairwise_kld_vectorized(tensor):
+def pairwise_kld_vectorized(tensor, n_samples = 512):
     """import pdb 
     pdb.set_trace()"""
+    # sampling? 
+    # pytorch KLD? 
     bs, n = tensor.shape
-    expanded_tensor = tensor.unsqueeze(1).cpu()  # Add an extra dimension for broadcasting
-    expanded_tensor = expanded_tensor.expand(bs, bs, n)  # Broadcast to create pairs
-    pairwise_kld_matrix = torch.sum(kl_divergence(expanded_tensor, expanded_tensor.transpose(0, 1)), dim=2)
+    # sample randomly from segment to use less memory
+    tensor = tensor[torch.randint(bs, (n_samples,)), :]  
+    # n_samples = bs
+    expanded_tensor = tensor.unsqueeze(1)  # Add an extra dimension for broadcasting
+    expanded_tensor = expanded_tensor.expand(n_samples, n_samples, n)  # Broadcast to create pairs
+    # print(expanded_tensor.shape)
+    # print(kl_divergence(expanded_tensor, expanded_tensor.transpose(0, 1), dim = 2).shape)
+
+    pairwise_kld_matrix = torch.sum(expanded_tensor * torch.log(expanded_tensor / expanded_tensor.transpose(0,1))) #torch.sum(kl_divergence(expanded_tensor, expanded_tensor.transpose(0, 1), dim = 2), dim=1)
     return pairwise_kld_matrix
 
 def kld_reg(logits, segments, normalize = True):
@@ -68,7 +78,7 @@ def kld_reg(logits, segments, normalize = True):
         class_logits = logits[:,:,mask]
         class_logits = class_logits.squeeze().permute(1,0)
         # the pairwise KLD between the pixel prediction should be minimized such that all predictions predict the same class within one segment.
-        kld_segment_value = pairwise_kld_greedy(F.softmax(class_logits, dim = 1))
+        kld_segment_value = pairwise_kld_vectorized(F.softmax(class_logits, dim = 1))
 
         if(normalize):
             kld_value += torch.sum(mask) * kld_segment_value

@@ -1073,7 +1073,7 @@ class StableDiffusionControlNetPipeline(
 
         controlnet = self.controlnet._orig_mod if is_compiled_module(self.controlnet) else self.controlnet
 
-        if(optimization_arguments['wandb_mode'] == "detailed"):
+        if(optimization_arguments['wandb_mode'] == "debug"):
             # make figure for visualization
             VIS_STEPS = np.min((num_inference_steps//2, BASIC_VIS_STEPS))
             s = 7
@@ -1082,7 +1082,7 @@ class StableDiffusionControlNetPipeline(
                 axis[0,0].set_ylabel("Denoising", fontsize=24)
                 axis[1,0].set_ylabel("Single Denoising Step", fontsize=24)
             else: 
-                fig,axis = plt.subplots(1, (num_inference_steps//VIS_STEPS)+1, figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
+                fig,axis = plt.subplots(1, (num_inference_steps-1//VIS_STEPS), figsize=((num_inference_steps//VIS_STEPS)*s, 2*s))
             
 
 
@@ -1294,7 +1294,7 @@ class StableDiffusionControlNetPipeline(
                     final_image = None
                     # START OPTIMIZATION 
                     if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i <= optimization_arguments['end_t'])):
-                        with torch.no_grad(): # torch.enable_grad(): #
+                        with torch.enable_grad(): #torch.no_grad(): # 
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
                             optim_timesteps = timesteps[:(i+1)]
@@ -1460,7 +1460,7 @@ class StableDiffusionControlNetPipeline(
                             # END OPTIMIZATION
                     
                     # STANDARD INFERENCE
-                    if(optimization_arguments["wandb_mode"] == "detailed"): 
+                    if(optimization_arguments["wandb_mode"] == "debug"): 
                         wandb.log({f"Latents/IS{i}": wandb.Histogram(latents.detach().cpu())})
                         wandb.log({f"Latents/IS{i}-Mean": torch.mean(latents.detach().cpu())})
                         wandb.log({f"Latents/IS{i}-Std": torch.std(latents.detach().cpu())})
@@ -1530,7 +1530,7 @@ class StableDiffusionControlNetPipeline(
                     latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]        
 
                     with torch.autocast(device_type = "cuda", enabled=False): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
-                        if((optimization_arguments["wandb_mode"] == "detailed") and ((((i-1) % VIS_STEPS) == 0) or (i == (num_inference_steps-1)))):
+                        if((optimization_arguments["wandb_mode"] == "debug") and ((((i-1) % VIS_STEPS) == 0) or (i == (num_inference_steps-1)))):
                             if(i == (num_inference_steps-1)):
                                 vis_idx = -1
                             else: 
@@ -1611,11 +1611,12 @@ class StableDiffusionControlNetPipeline(
         # print(f"Final image min: {loss_image.min()}")
         # print(f"Final image shape: {loss_image.shape}")
 
+        # for logging only: use weights of 1 to make different runs with different weights comparable
         uncertainty_loss, reg_loss, loss, uncertainty_img = loss_fct(loss_image, real_image.cuda(), annotation, seg_model, 
                                                    optimization_arguments["uncertainty_loss_fct"], 
                                                    optimization_arguments["reg_fct"], 
-                                                   optimization_arguments["w_loss"], 
-                                                   optimization_arguments["w_reg"], 
+                                                   1.0, #optimization_arguments["w_loss"], 
+                                                   1.0, #optimization_arguments["w_reg"], 
                                                    base_segments = optimization_arguments["base_segments"], 
                                                    normalize = optimization_arguments["norm_loss"], 
                                                    visualize = True, 
@@ -1630,13 +1631,14 @@ class StableDiffusionControlNetPipeline(
         for k in optimization_arguments.keys(): 
             title += f"\n{k}: {optimization_arguments[k]}"
 
-        if(optimization_arguments['wandb_mode'] == "detailed"):
+        if(optimization_arguments['wandb_mode'] == "debug"):
             plt.suptitle(title, fontsize=24)
             plt.tight_layout()
             plt.subplots_adjust(hspace=0.4)
-            wandb.log({f"Images": wandb.Image(plt)}) # TODO 
+            wandb.log({f"Images": wandb.Image(plt)}) 
             plt.close()
 
+        if(optimization_arguments['wandb_mode'] == "detailed"):
             s = 5
             fig, axis = plt.subplots(5, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])

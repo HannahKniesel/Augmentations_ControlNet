@@ -127,7 +127,10 @@ if __name__ == "__main__":
                     results[seg_model_name]["mc_dropout"] = [mc_dropout]"""
 
             if("entropy" in args.uncertainty_loss):
-                entropy = float(entropy_loss(init_image, None, seg_model)[0].cpu())    # generated_image, real_images, model,
+                # entropy = float(entropy_loss(init_image, None, seg_model)[0].cpu())    # generated_image, real_images, model,
+
+                entropy = float(uncertaintyloss_fct(init_image, seg_model, entropy_loss, visualize = False)[0].cpu())
+
                 try: 
                     results[seg_model_name]["entropy"].append(entropy)
                 except: 
