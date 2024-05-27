@@ -62,8 +62,7 @@ if __name__ == "__main__":
     prompts_folder = prompts_folder[1:]
 
     real_image_paths = sorted(glob(os.path.join(args.data_path, images_folder)+"/*"+images_format))
-    import pdb 
-    pdb.set_trace()
+
 
     if((args.percentage > 0) and (args.cross_val_splits > 1)):
         print(f"ERROR::Can either generate cross validation splits or a subset of the training data, not both. Please set either args.percentage to -1 or args.corss_val_splits to 1.")
