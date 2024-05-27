@@ -105,9 +105,8 @@ def easy_fct(logits, gt, visualize = False):
     loss = crossentropy(logits, gt.unsqueeze(0).type(torch.LongTensor).to(device))
     uncertainty_loss = -1*torch.mean(loss)
     if(visualize):
-        uncertainty_img = loss.detach().cpu().squeeze()
         print(f"Uncertainty Loss: {uncertainty_loss}")
-        return uncertainty_loss, uncertainty_img
+        return uncertainty_loss, loss.detach().cpu().squeeze()
     return uncertainty_loss, None
 
 
@@ -115,9 +114,8 @@ def hard_fct(logits, gt, visualize = False):
     loss = -1*crossentropy(logits, gt.unsqueeze(0).type(torch.LongTensor).to(device))
     uncertainty_loss = -1*torch.mean(loss)
     if(visualize):
-        uncertainty_img = loss.detach().cpu().squeeze()
         print(f"Uncertainty Loss: {uncertainty_loss}")
-        return uncertainty_loss, uncertainty_img
+        return uncertainty_loss, loss.detach().cpu().squeeze()
     return uncertainty_loss, None
 
 
