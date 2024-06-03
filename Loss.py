@@ -2,8 +2,10 @@ import torch
 from Utils import index2color_annotation
 import ade_config
 import torchvision
+from Utils import device
 
 softmax = torch.nn.Softmax(dim = 1)
+crossentropy = torch.nn.CrossEntropyLoss(reduction="none")
 
 def get_size(input, model):
     with torch.no_grad():
@@ -31,7 +33,9 @@ def get_prediction(input,model):
     prediction = index2color_annotation(prediction.cpu().squeeze(), ade_config.palette)
     return prediction
 
-def loss_fct(generated_image, real_image, gt_segments, model, uncertainty_loss_fct, reg_fct, w_loss, w_reg, base_segments = "gt", normalize = True, visualize = False, by_value = False):
+
+
+def loss_fct(generated_image, gt, easy_model, w_easy, hard_model, w_hard, visualize = False, by_value = False):
     r"""
         Compute loss by combining regularization and uncertainty computation
 
@@ -62,43 +66,45 @@ def loss_fct(generated_image, real_image, gt_segments, model, uncertainty_loss_f
                 weather to visualize the entropy
                 Default = False
     """
-    logits = forward_model(generated_image, model) # bs x c x h x w
+    # get predictions of base model
+    if(easy_model is not None):
+        logits_easy = easy_model(generated_image) #, mode="tensor") 
+        gt_shape = logits_easy.shape[-2:] 
+   
 
-    if(base_segments == "real"):
-        real_image = torchvision.transforms.functional.center_crop(real_image, generated_image.shape[-2:])
-        segments = softmax(forward_model(real_image, model)) # bs x c x h x w
-        segments = torch.argmax(segments, dim = 1).squeeze().detach().cpu() # W x H #softmax(logits).argmax(1).squeeze().detach().cpu().numpy() #
-    elif(base_segments == "gt"):
-        # crop and resize to logits shape
-        segments = torchvision.transforms.functional.center_crop(gt_segments, generated_image.shape[-2:])
-        segments = torchvision.transforms.functional.resize(segments, logits.shape[-2:], antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).squeeze() 
+    if(hard_model is not None):
+        logits_hard = hard_model(generated_image) #, mode="tensor") 
+        gt_shape = logits_hard.shape[-2:] 
     else: 
-        print(f"ERROR::Can not retrieve segments from {base_segments}. Define as 'gt' or 'real'.")
-    uncertainty_value, uncertainty_img = uncertainty_loss_fct(logits, segments, visualize = visualize)
-    reg_value = reg_fct(logits, segments, normalize = normalize)
-    loss_value = (w_loss * uncertainty_value) + (w_reg * reg_value)
+        logits_hard = torch.Tensor([0.], device = device)
+
+    # prepare GT masks
+    gt = torchvision.transforms.functional.center_crop(gt, generated_image.shape[-2:])
+    gt = torchvision.transforms.functional.resize(gt, gt_shape, antialias = False, interpolation = torchvision.transforms.functional.InterpolationMode.NEAREST).type(torch.LongTensor).to(device)
+    
+    # compute loss
+    if(easy_model is not None):
+        # minimize the crossentropy to get an "easy" example for the trained model
+        easy_loss = crossentropy(logits_easy, gt)
+    else: 
+        easy_loss = torch.Tensor([0.], device = device)
+
+    if(hard_model is not None):
+        # maximize the crossentropy (minimize the negative crossentropy) to get an "hard" example for the trained model
+        hard_loss = -1*crossentropy(logits_hard, gt)
+    else: 
+        hard_loss = torch.Tensor([0.], device = device)
+
+    loss = (w_easy*easy_loss) + (w_hard*hard_loss)
+
+    #TODO check shape of loss and implement visualize == True
+    if(visualize):
+        return torch.mean(loss), loss.detach().cpu().squeeze()
 
     if(by_value):
-        return uncertainty_value.item(), reg_value.item(), loss_value.item(), uncertainty_img
+        return torch.mean(easy_loss).item(), torch.mean(hard_loss).item(), torch.mean(loss).item(), loss.detach().cpu().squeeze()
+        
     
-    return loss_value, uncertainty_img
-    
+    return torch.mean(loss), None
 
-def uncertaintyloss_fct(generated_image, model, uncertainty_loss_fct, visualize = False):
-    r"""
-        Compute uncertainty loss only
 
-        Args:
-            generated_image (`torch.cuda.FloatTensor`): 
-                generated image from guided inference process. Shape = 1 x 3 x W x H
-            model (`torch.cuda.JitModule`): 
-                segmentation model for uncertainty computation
-            uncertainty_loss_fct (`Callable`): 
-                Uncertainty loss for loss computation
-            visualize (`bool`, optional): 
-                weather to visualize the entropy
-                Default = False
-    """
-    logits = forward_model(generated_image, model) # bs x c x h x w
-    loss_value, uncertainty_img = uncertainty_loss_fct(logits, visualize = visualize) 
-    return loss_value, uncertainty_img

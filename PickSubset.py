@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
         # get img paths of subset
         np.random.seed(7353)
-        subset_paths = [np.random.choice(real_image_paths, size=(int(len(real_image_paths)*args.percentage),))] #[args.start_idx: args.end_idx]     
+        subset_paths = [np.random.choice(real_image_paths, size=(int(len(real_image_paths)*args.percentage),), replace = False)] #[args.start_idx: args.end_idx]     
 
     for save_to, real_image_paths in zip(save_paths, subset_paths):
         # make folder structure
@@ -92,13 +92,21 @@ if __name__ == "__main__":
         # os.makedirs(save_to + prompts_folder, exist_ok=True)
 
         
-           
+        names_lst = []
         for i,p in enumerate(real_image_paths): 
             if((i % 1000)==0):
                 print(f"INFO::Image {i}/{len(real_image_paths)}. Source folder: {args.data_path}. Dest folder: {save_to}")
+            dp_name_origin = Path(p).stem
             dp_name = Path(p).stem
 
-            real_path = f"{os.path.join(args.data_path, images_folder, dp_name)}{images_format}"
+            idx_name = 0
+            while(dp_name in names_lst):
+                dp_name = f"{dp_name}_{str(idx_name).zfill(3)}"
+                idx_name += 1
+          
+            names_lst.append(dp_name)
+
+            real_path = f"{os.path.join(args.data_path, images_folder, dp_name_origin)}{images_format}"
             
             # copy real image
             real_dst_img = f"{os.path.join(save_to, images_folder, dp_name)}{images_format}"
@@ -106,7 +114,7 @@ if __name__ == "__main__":
 
             # copy real annotation 
             real_dst_ann = f"{os.path.join(save_to, annotations_folder, dp_name)}{annotations_format}"
-            real_src_ann = f"{os.path.join(args.data_path, annotations_folder, dp_name)}{annotations_format}"
+            real_src_ann = f"{os.path.join(args.data_path, annotations_folder, dp_name_origin)}{annotations_format}"
             shutil.copy(real_src_ann, real_dst_ann)
 
         # copy prompts

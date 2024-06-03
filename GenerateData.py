@@ -77,49 +77,16 @@ if __name__ == "__main__":
     parser.add_argument('--optim_every_n_steps', type=int, default=1)
     parser.add_argument('--start_t', type=int, default=0)
     parser.add_argument('--end_t', type=int, default=80)
-    parser.add_argument('--uncertainty_loss_fct', type=str, choices=["entropy", "easy", "hard"], default="entropy")
-    parser.add_argument('--reg_fct', type=str, choices=["mse", "kld", "none"], default="mse")
-    parser.add_argument('--base_segments', type=str, choices=["gt", "real"], default="gt")
-    parser.add_argument('--norm_loss', action='store_true')
-    parser.add_argument('--w_loss', type=float, default=1.0)
-    parser.add_argument('--w_reg', type=float, default=1.0)
-    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
+    parser.add_argument('--easy_model', type=str, default="./base_models/03-06-2024/BestEpoch/eval_model_scripted.pt")
+    parser.add_argument('--hard_model', type=str, default="./base_models/03-06-2024/EarlyStopping25/eval_model_scripted.pt")
+    parser.add_argument('--w_hard', type=float, default=1.0)
+    parser.add_argument('--w_easy', type=float, default=1.0)
     parser.add_argument('--cos_annealing', action='store_true')
     parser.add_argument('--mixed_precision', type=str, choices=["bf16", "fp16"], default="bf16")
 
+    # ./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/eval_model_scripted.pt
     args = parser.parse_args()
     print(f"Parameters: {args}")
-
-    # Loss
-    if(args.uncertainty_loss_fct == "entropy"):
-        uncertainty_loss_fct = entropy_loss
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-    elif(args.uncertainty_loss_fct == "easy"):
-        uncertainty_loss_fct = easy_fct
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-        if(args.base_segments != "gt"):
-            print(f"ERROR:: args.base_segments are defined as {args.base_segments} but should be defined as 'gt' for loss {args.uncertainty_loss_fct}")
-            import sys
-            sys.exit(-1)
-    elif(args.uncertainty_loss_fct == "hard"):
-        uncertainty_loss_fct = hard_fct
-        args.model_path = args.model_path + "eval_model_scripted.pt"
-        if(args.base_segments != "gt"):
-            print(f"ERROR:: args.base_segments are defined as {args.base_segments} but should be defined as 'gt' for loss {args.uncertainty_loss_fct}")
-            import sys
-            sys.exit(-1)
-    else: 
-        print(f"ERROR:: Could not match the defined uncertainty_loss_fct {args.uncertainty_loss_fct}")
-
-    # Regularization
-    if(args.reg_fct == "mse"):
-        reg_fct = mse_reg
-    elif(args.reg_fct == "kld"):
-        reg_fct = kld_reg
-    elif(args.reg_fct == "none"): 
-        reg_fct = no_reg
-    else: 
-        print(f"ERROR:: Could not match the defined reg_fct {args.reg_fct}")
 
     # prompt mode
     if(args.prompt_type == "no_prompts"):
@@ -141,18 +108,17 @@ if __name__ == "__main__":
                             "optim_every_n_steps": args.optim_every_n_steps,
                             "start_t": args.start_t, 
                             "end_t": args.end_t,
-                            "uncertainty_loss_fct": uncertainty_loss_fct, 
-                            "reg_fct": reg_fct,
-                            "w_loss": args.w_loss,
-                            "w_reg": args.w_reg,
-                            "base_segments": args.base_segments,
-                            "norm_loss": args.norm_loss,
+                            "w_hard": args.w_hard,
+                            "w_easy": args.w_easy,
                             "mixed_precision": args.mixed_precision,
                             "cos_annealing": args.cos_annealing}
     if(args.optimize):
-        group = f"{args.w_loss}x{args.uncertainty_loss_fct}+{args.w_reg}x{args.reg_fct}_{args.base_segments}_lr-{args.lr}_i-{args.iters}"
-        if(args.norm_loss):
-            group += "-norm"
+        group = ""
+        if(args.easy_model != ""):
+            group += f"{args.w_easy}xEasy"
+        if(args.hard_model != ""):
+            group += f"+{args.w_hard}xHard"
+        group += f"_lr-{args.lr}_i-{args.iters}"
     else: 
         group = "baseline"
 
@@ -192,11 +158,17 @@ if __name__ == "__main__":
         shutil.copy(filename, save_prompt_path)
 
     
-    if(args.model_path != ""):
-        seg_model = torch.jit.load(args.model_path)
-        seg_model = seg_model.to(device)
+    if(args.easy_model != ""):
+        easy_model = torch.jit.load(args.easy_model)
+        easy_model = easy_model.to(device)
     else: 
-        seg_model = None
+        easy_model = None
+
+    if(args.hard_model != ""):
+        hard_model = torch.jit.load(args.hard_model)
+        hard_model = hard_model.to(device)
+    else: 
+        hard_model = None
 
 
     # load controlnet
@@ -229,8 +201,8 @@ if __name__ == "__main__":
     mean_time_augmentation = []
     total_nsfw = 0
     avg_loss = []
-    avg_loss_uncertainty = []
-    avg_loss_regularization = []
+    avg_loss_easy = []
+    avg_loss_hard = []
 
     # iterate over dataset
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
@@ -246,7 +218,7 @@ if __name__ == "__main__":
             # TODO include new pipeline
             generator = torch.manual_seed(0 + aug_index)
             aug_index += 1
-            output, elapsed_time, loss, loss_uncertainty, loss_regularization = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
+            output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
                                     controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
@@ -259,7 +231,8 @@ if __name__ == "__main__":
                                     generator=generator, 
                                     img_name = Path(path[0]).stem,
                                     optimization_arguments = optimization_params, 
-                                    seg_model = seg_model, 
+                                    easy_model = easy_model, 
+                                    hard_model = hard_model, 
                                     real_image = init_img, 
                                     annotation = annotation,
                                     )
@@ -271,13 +244,13 @@ if __name__ == "__main__":
             augmented = output.images
             num_nsfw = 0
 
-            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Uncertainty = {loss_uncertainty} | Loss Regularization = {loss_regularization}")
+            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Easy = {easy_loss} | Loss Hard = {hard_loss}")
 
             total_nsfw += num_nsfw
             augmentations.extend(augmented)
             avg_loss.append(loss)
-            avg_loss_uncertainty.append(loss_uncertainty)
-            avg_loss_regularization.append(loss_regularization)
+            avg_loss_easy.append(easy_loss)
+            avg_loss_hard.append(hard_loss)
 
 
             mean_time_augmentation.append(elapsed_time)
@@ -300,8 +273,8 @@ if __name__ == "__main__":
         remainingtime_img_str = str(timedelta(seconds=remaining_time))
         print(f"Image {img_idx+args.start_idx}/{len(dataset)+args.start_idx} | \
               Avg Loss = {np.mean(avg_loss)} | \
-              Avg Loss Uncertainty = {np.mean(avg_loss_uncertainty)} | \
-              Avg Loss Regularization = {np.mean(avg_loss_regularization)} | \
+              Avg Loss Easy = {np.mean(avg_loss_easy)} | \
+              Avg Loss Hard = {np.mean(avg_loss_hard)} | \
               Number of augmentations = {len(augmentations)} | \
               Time for image = {elapsedtime_img_str} | \
               Avg time for image = {str(timedelta(seconds=np.mean(mean_time_img)))} | \
@@ -312,8 +285,8 @@ if __name__ == "__main__":
         
         if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
-                    "AvgLoss Uncertainty": np.mean(avg_loss_uncertainty), 
-                    "AvgLoss Regularization": np.mean(avg_loss_regularization), 
+                    "AvgLoss Easy": np.mean(avg_loss_easy), 
+                    "AvgLoss Hard": np.mean(avg_loss_hard), 
                     "AvgTime Augmentation": np.mean(mean_time_augmentation)})
 
     end_time = time.time()
