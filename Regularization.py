@@ -1,9 +1,10 @@
 import torch 
 import numpy as np
 import torch.nn.functional as F
+from Utils import device
 
 def no_reg(logits, segments, normalize = True):
-    return 0
+    return torch.tensor([0.], device = device)
 
 
 def mse_reg(logits, segments, normalize = True):
