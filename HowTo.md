@@ -101,6 +101,12 @@ docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v /media/hansel/SSD/Code
 
 # convert trained model to jit model -> saves model in ckpt_file directory 
 python convert_to_jit.py --config_file ./configs/sem_fpn/fpn_r50_4xb4-160k_ade20k-512x512_noaug.py --ckpt_file "./work_dirs/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/best_mIoU_epoch_136.pth" 
+
+# convert trained jit models to a single ensemble jit model -> creates a single model out of all models in directory. Saves model in same directory 
+python make_ensemble.py --jit_dir ./base_models/03-06-2024/Ensemble/  
+
+# convert trained dropout jit models to a single mcd jit model. Saves model in same directory 
+python make_mcd.py --jit_dir ./base_models/03-06-2024/MCD/ --mcd_samples 5  
 ```
 
 # Generate Data
