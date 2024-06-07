@@ -950,7 +950,7 @@ class StableDiffusionControlNetPipeline(
         img_name: str = "",
         real_image: torch.FloatTensor = None, 
         annotation: torch.FloatTensor = None, 
-
+        img_idx: int = 0,
         **kwargs,
     ):
         r"""
@@ -1642,7 +1642,7 @@ class StableDiffusionControlNetPipeline(
             wandb.log({f"Images": wandb.Image(plt)}) 
             plt.close()
 
-        if(optimization_arguments['wandb_mode'] == "detailed"):
+        if((optimization_arguments['wandb_mode'] == "detailed") or ((optimization_arguments['wandb_mode'] == "every_100") and ((img_idx % 100) == 0))):
             s = 5
             fig, axis = plt.subplots(6, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])
