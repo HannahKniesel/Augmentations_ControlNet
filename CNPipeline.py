@@ -1239,13 +1239,18 @@ class StableDiffusionControlNetPipeline(
             enable_mp = False
 
         # TODO preprocess annotation to speed up process
+
+        # do not do ditributed training
+        os.environ.pop('WORLD_SIZE', None)
+        os.environ.pop('RANK', None)
+        os.environ.pop('MASTER_ADDR', None)
+        os.environ.pop('MASTER_PORT', None)
         
         accelerator = Accelerator(
             gradient_accumulation_steps=1,
             mixed_precision= optimization_arguments["mixed_precision"],
             log_with=None,
             project_config=None,
-            distributed_type=None # do not do ditributed training
         )
 
         # only require grads for latents 
