@@ -97,13 +97,11 @@ def loss_fct(generated_image, gt, easy_model, w_easy, hard_model, w_hard, visual
 
     loss = (w_easy*easy_loss) + (w_hard*hard_loss)
 
-    #TODO check shape of loss and implement visualize == True
-    if(visualize):
-        return torch.mean(loss), loss.detach().cpu().squeeze()
-
     if(by_value):
         return torch.mean(easy_loss).item(), torch.mean(hard_loss).item(), torch.mean(loss).item(), loss.detach().cpu().squeeze()
-        
+
+    if(visualize):
+        return torch.mean(loss), loss.detach().cpu().squeeze()
     
     return torch.mean(loss), None
 

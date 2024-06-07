@@ -1245,6 +1245,7 @@ class StableDiffusionControlNetPipeline(
             mixed_precision= optimization_arguments["mixed_precision"],
             log_with=None,
             project_config=None,
+            distributed_type=None # do not do ditributed training
         )
 
         # only require grads for latents 
@@ -1613,14 +1614,15 @@ class StableDiffusionControlNetPipeline(
         # print(f"Final image shape: {loss_image.shape}")
 
         # for logging only: use weights of 1 to make different runs with different weights comparable
-        easy_loss, hard_loss, loss, heatmap = loss_fct(final_image, 
-                            annotation, 
-                            easy_model, 
-                            optimization_arguments["w_easy"], 
-                            hard_model, 
-                            optimization_arguments["w_hard"], 
-                            visualize = True, 
-                            by_value = True) 
+        with torch.autocast(device_type='cuda', dtype=weight_dtype):
+            easy_loss, hard_loss, loss, heatmap = loss_fct(loss_image, 
+                                annotation, 
+                                easy_model, 
+                                optimization_arguments["w_easy"], 
+                                hard_model, 
+                                optimization_arguments["w_hard"], 
+                                visualize = True, 
+                                by_value = True) 
 
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss}"
@@ -1642,12 +1644,12 @@ class StableDiffusionControlNetPipeline(
             axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
             axis[0].imshow(gt_mask[0].permute(1,2,0))
 
-            axis[1].set_title("Easy Prediction")
+            axis[1].set_title(f"Easy Prediction CE = {easy_loss:.4f}")
             if(easy_model is not None):
                 pred = get_prediction(loss_image,easy_model)
                 im = axis[1].imshow(pred.squeeze())
 
-            axis[2].set_title("Hard Prediction")
+            axis[2].set_title(f"Hard Prediction CE = {-1*hard_loss:.4f}")
             if(hard_model is not None):
                 pred = get_prediction(loss_image,hard_model)
                 im = axis[2].imshow(pred.squeeze())
