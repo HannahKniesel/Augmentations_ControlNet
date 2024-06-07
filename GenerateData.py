@@ -122,7 +122,7 @@ if __name__ == "__main__":
     else: 
         group = "baseline"
 
-    if(bool(args.wandb_mode in ["standard", "detailed"])):
+    if(bool(args.wandb_mode in ["standard", "detailed", "every_100"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
         """group = "Optimization" if optimization_params['do_optimize'] else "Base"
         if  optimization_params['do_optimize']: """
