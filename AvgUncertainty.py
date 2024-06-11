@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader
 
 from Datasets import SyntheticAde20kDataset
 from Utils import device
-from Uncertainties import entropy_loss
-from Loss import uncertaintyloss_fct
+from Loss import loss_fct
+
 
 import ade_config
 
@@ -33,11 +33,11 @@ if __name__ == "__main__":
     # General Parameters
     parser.add_argument('--experiment_name', type = str, default="")
     parser.add_argument('--wandb_project', type=str, default="")
-    parser.add_argument('--uncertainty_loss', type=str, nargs="+", choices=["entropy"], default=["entropy"])
-    parser.add_argument('--w_pixel', type=float, default=0.0)
-    parser.add_argument('--w_class', type=float, default=1.0)
     parser.add_argument('--data_path', type=str, default="./data/ade_augmented/finetuned_cn10/") 
-    parser.add_argument('--model_path', type=str, default="./seg_models/fpn_r50_4xb4-160k_ade20k-512x512_noaug/20240127_201404/")
+    parser.add_argument('--easy_model', type=str, default="./base_models/03-06-2024/BestEpoch/eval_model_scripted.pt")
+    parser.add_argument('--hard_model', type=str, default="./base_models/03-06-2024/EarlyStopping25/eval_model_scripted.pt")
+    parser.add_argument('--w_hard', type=float, default=1.0)
+    parser.add_argument('--w_easy', type=float, default=1.0)
     parser.add_argument('--remove_black_images', action='store_true')
 
 
@@ -45,29 +45,29 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    if("mc_dropout" in args.uncertainty_loss):
-        args.model_path = args.model_path + "/train_model_scripted.pt"
-        print("WARNING:: MCDropout uncertainty detected. Open model in train mode.")
-    else: 
-        args.model_path = args.model_path + "/eval_model_scripted.pt"
-        print("INFO::Open model in eval mode.")
+    
 
 
-    seg_model_name = Path(args.model_path).parent.parent.stem
+    easy_model_name = Path(args.easy_model).parent.stem
+    hard_model_name = Path(args.hard_model).parent.stem
+    exp_name = f"Easy-{easy_model_name}-Hard-{hard_model_name}"
+
 
     if(args.wandb_project != ""):
         os.environ['WANDB_PROJECT']= args.wandb_project
         wandb.init(config = args, reinit=True, mode="online")
         # wandb_name = self.wandb_name+"_"+str(wandb.run.id)
-        wandb.run.name = f"{seg_model_name}_{args.experiment_name}_{wandb.run.id}"
+        wandb.run.name = f"{exp_name}_{args.experiment_name}_{wandb.run.id}"
 
     start_time = time.time()
 
     dataset = SyntheticAde20kDataset(args.data_path)
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
 
-    seg_model = torch.jit.load(args.model_path)
-    seg_model = seg_model.to(device)
+    easy_model = torch.jit.load(args.easy_model)
+    easy_model = easy_model.to(device)
+    hard_model = torch.jit.load(args.hard_model)
+    hard_model = hard_model.to(device)
 
 
     try: 
@@ -77,21 +77,21 @@ if __name__ == "__main__":
             print(results)
             print()
 
-            if(not(seg_model_name in results.keys())):
-                results[seg_model_name] = {}
-                print(f"INFO::Model not found in uncertainties. Make new entry.")
+            if(not(exp_name in results.keys())):
+                results[exp_name] = {}
+                print(f"INFO::Experiment not found in uncertainties. Make new entry '{exp_name}'.")
             else: 
                 to_remove = []
                 for k in args.uncertainty_loss: 
-                    if k in results[seg_model_name].keys():
-                        print(f"WARNING:: There are already entries for {k} in the existing dict ({results[seg_model_name][k]}). Do not overwrite these entries.")
+                    if k in results[exp_name].keys():
+                        print(f"WARNING:: There are already entries for {k} in the existing dict ({results[exp_name][k]}). Do not overwrite these entries.")
                         to_remove.append(k)
                     
                 args.uncertainty_loss = [k for k in args.uncertainty_loss if not(k in to_remove)]
 
     except:
         print(f"INFO::Could not find logged uncertainties at {args.data_path}/uncertainties.txt. Hence make new file.")
-        results = {seg_model_name : {}}
+        results = {exp_name : {}}
 
     if(args.remove_black_images):
         black_images_path = f"{args.data_path}/black_images/"
@@ -119,57 +119,36 @@ if __name__ == "__main__":
                     
 
             init_image = init_image.to(device)
-            """if("mc_dropout" in args.uncertainty_loss):
-                mc_dropout = float(mcdropout_loss(init_image, None, None, seg_model, mc_samples = 5)[0].cpu())  #generated_image, real_images, gt_mask, model, mc_samples = 5, visualize = False
-                try: 
-                    results[seg_model_name]["mc_dropout"].append(mc_dropout)
-                except: 
-                    results[seg_model_name]["mc_dropout"] = [mc_dropout]"""
+            easy_loss, hard_loss, loss, heatmap = loss_fct(init_image, 
+                            annotation, 
+                            easy_model, 
+                            args.w_easy, 
+                            hard_model, 
+                            args.w_hard, 
+                            visualize = True, 
+                            by_value = True) 
+            try: 
+                results[exp_name]["CE-easy"].append(easy_loss)
+            except: 
+                results[exp_name]["CE-easy"] = [easy_loss]
 
-            if("entropy" in args.uncertainty_loss):
-                # entropy = float(entropy_loss(init_image, None, seg_model)[0].cpu())    # generated_image, real_images, model,
+            try: 
+                results[exp_name]["CE-hard"].append(-1*hard_loss)
+            except: 
+                results[exp_name]["CE-hard"] = [-1*hard_loss]
 
-                entropy = float(uncertaintyloss_fct(init_image, seg_model, entropy_loss, visualize = False)[0].cpu())
+            try: 
+                results[exp_name]["Loss"].append(loss)
+            except: 
+                results[exp_name]["Loss"] = [loss]
 
-                try: 
-                    results[seg_model_name]["entropy"].append(entropy)
-                except: 
-                    results[seg_model_name]["entropy"] = [entropy]
-
-            """if("segment_based_entropy" in args.uncertainty_loss):
-                entropy = float(min_max_segment_entropy_loss(init_image, None, annotation, seg_model, args.w_pixel, args.w_class)[0].cpu())    # generated_image, real_images, model,
-                try: 
-                    results[seg_model_name]["segment_based_entropy"].append(entropy)
-                except: 
-                    results[seg_model_name]["segment_based_entropy"] = [entropy]
-
-            if("lcu" in args.uncertainty_loss):
-                lcu = float(lcu_loss(init_image, None, None, seg_model)[0].cpu())  
-                try: 
-                    results[seg_model_name]["lcu"].append(lcu)
-                except: 
-                    results[seg_model_name]["lcu"] = [lcu]
-
-            if("lmu" in args.uncertainty_loss):
-                lmu = float(lmu_loss(init_image, None, seg_model)[0].cpu())
-                try: 
-                    results[seg_model_name]["lmu"].append(lmu)
-                except: 
-                    results[seg_model_name]["lmu"] = [lmu]
             
-            if("smu" in args.uncertainty_loss):
-                smu = float(smu_loss(init_image, None, seg_model)[0].cpu())
-                try: 
-                    results[seg_model_name]["smu"].append(smu)
-                except: 
-                    results[seg_model_name]["smu"] = [smu]
-            """
     print("INFO::Compute mean and std...")
     for key in args.uncertainty_loss: #results[seg_model_name]: 
-        values = results[seg_model_name][key]
+        values = results[exp_name][key]
         mean_val = np.mean(values)
         std_val = np.std(values)
-        results[seg_model_name][key] = {"mean": mean_val, "std": std_val}
+        results[exp_name][key] = {"mean": mean_val, "std": std_val}
 
         if(args.wandb_project != ""):
             wandb.log({f"{key}_Mean" : mean_val})
