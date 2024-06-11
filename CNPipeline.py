@@ -1650,12 +1650,12 @@ class StableDiffusionControlNetPipeline(
             axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
             axis[0].imshow(gt_mask[0].permute(1,2,0))
 
-            axis[1].set_title(f"Easy Prediction CE = {easy_loss:.4f}")
+            axis[1].set_title(f"Easy (Teacher) Prediction CE = {easy_loss:.4f}")
             if(easy_model is not None):
                 pred = get_prediction(loss_image,easy_model)
                 im = axis[1].imshow(pred.squeeze())
 
-            axis[2].set_title(f"Hard Prediction CE = {-1*hard_loss:.4f}")
+            axis[2].set_title(f"Hard (Student) Prediction CE = {-1*hard_loss:.4f}")
             if(hard_model is not None):
                 pred = get_prediction(loss_image,hard_model)
                 im = axis[2].imshow(pred.squeeze())
