@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     # Logging Parameters
     parser.add_argument('--experiment_name', type = str, default="")
-    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed"], default = "standard")
+    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed", "every_100"], default = "every_100")
     parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--seed', type = int, default=7353)
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     else: 
         group = "baseline"
 
-    if(bool(args.wandb_mode in ["standard", "detailed"])):
+    if(bool(args.wandb_mode in ["standard", "detailed", "every_100"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
         """group = "Optimization" if optimization_params['do_optimize'] else "Base"
         if  optimization_params['do_optimize']: """
@@ -235,6 +235,7 @@ if __name__ == "__main__":
                                     hard_model = hard_model, 
                                     real_image = init_img, 
                                     annotation = annotation,
+                                    img_idx = img_idx,
                                     )
 
             #try:

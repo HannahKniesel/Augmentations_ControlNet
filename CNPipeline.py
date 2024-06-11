@@ -950,7 +950,7 @@ class StableDiffusionControlNetPipeline(
         img_name: str = "",
         real_image: torch.FloatTensor = None, 
         annotation: torch.FloatTensor = None, 
-
+        img_idx: int = 0,
         **kwargs,
     ):
         r"""
@@ -1239,13 +1239,20 @@ class StableDiffusionControlNetPipeline(
             enable_mp = False
 
         # TODO preprocess annotation to speed up process
+
+        # do not do ditributed training
+        """os.environ.pop('WORLD_SIZE', None)
+        os.environ.pop('RANK', None)
+        os.environ.pop('MASTER_ADDR', None)
+        os.environ.pop('MASTER_PORT', None)"""
         
-        accelerator = Accelerator(
+        """accelerator = Accelerator(
             gradient_accumulation_steps=1,
             mixed_precision= optimization_arguments["mixed_precision"],
             log_with=None,
             project_config=None,
-        )
+            use_distributed=False,
+        )"""
 
         # only require grads for latents 
         # seg_model.to(accelerator.device, dtype=weight_dtype)
@@ -1613,14 +1620,15 @@ class StableDiffusionControlNetPipeline(
         # print(f"Final image shape: {loss_image.shape}")
 
         # for logging only: use weights of 1 to make different runs with different weights comparable
-        easy_loss, hard_loss, loss, heatmap = loss_fct(final_image, 
-                            annotation, 
-                            easy_model, 
-                            optimization_arguments["w_easy"], 
-                            hard_model, 
-                            optimization_arguments["w_hard"], 
-                            visualize = True, 
-                            by_value = True) 
+        with torch.autocast(device_type='cuda', dtype=weight_dtype):
+            easy_loss, hard_loss, loss, heatmap = loss_fct(loss_image, 
+                                annotation, 
+                                easy_model, 
+                                optimization_arguments["w_easy"], 
+                                hard_model, 
+                                optimization_arguments["w_hard"], 
+                                visualize = True, 
+                                by_value = True) 
 
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss}"
@@ -1634,7 +1642,7 @@ class StableDiffusionControlNetPipeline(
             wandb.log({f"Images": wandb.Image(plt)}) 
             plt.close()
 
-        if(optimization_arguments['wandb_mode'] == "detailed"):
+        if((optimization_arguments['wandb_mode'] == "detailed") or ((optimization_arguments['wandb_mode'] == "every_100") and ((img_idx % 100) == 0))):
             s = 5
             fig, axis = plt.subplots(6, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])
@@ -1642,12 +1650,12 @@ class StableDiffusionControlNetPipeline(
             axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
             axis[0].imshow(gt_mask[0].permute(1,2,0))
 
-            axis[1].set_title("Easy Prediction")
+            axis[1].set_title(f"Easy Prediction CE = {easy_loss:.4f}")
             if(easy_model is not None):
                 pred = get_prediction(loss_image,easy_model)
                 im = axis[1].imshow(pred.squeeze())
 
-            axis[2].set_title("Hard Prediction")
+            axis[2].set_title(f"Hard Prediction CE = {-1*hard_loss:.4f}")
             if(hard_model is not None):
                 pred = get_prediction(loss_image,hard_model)
                 im = axis[2].imshow(pred.squeeze())
