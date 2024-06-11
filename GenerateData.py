@@ -284,7 +284,7 @@ if __name__ == "__main__":
               {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW |\
               Crop Images = {dataset.resized_counter}")
         
-        if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
+        if(optimization_params["wandb_mode"] in ["standard", "detailed", "every_100"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
                     "AvgLoss Easy": np.mean(avg_loss_easy), 
                     "AvgLoss Hard": np.mean(avg_loss_hard), 
@@ -295,7 +295,7 @@ if __name__ == "__main__":
     elapsedtime_str = str(timedelta(seconds=elapsedtime))
     print(f"Time to generate {args.num_augmentations} augmentations for {len(dataset)} images was {elapsedtime_str}")
     print(f"Average loss over dataset is {np.mean(avg_loss)}.")
-    if(optimization_params["wandb_mode"] in ["standard", "detailed"]):
+    if(optimization_params["wandb_mode"] in ["standard", "detailed", "every_100"]):
         wandb.log({"Dataset Loss": np.mean(avg_loss), 
                     "Final Time Avg" : np.mean(mean_time_augmentation)})
 
