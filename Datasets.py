@@ -94,8 +94,12 @@ class Ade20kDataset(AbstractAde20k):
         resized = False
         self.resized_counter += bool(resized)
         annotation = np.array(annotation)
-
-        condition = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
+        
+        import pdb 
+        pdb.set_trace()
+        # condition 
+        condition = Image.fromarray(np.uint8(index2color_annotation(annotation, ade_config.palette)))
+        # x = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
         # condition = torch.from_numpy(index2color_annotation(annotation, ade_config.palette)).permute(2,0,1) # condition is in range [0,255]
 
         
