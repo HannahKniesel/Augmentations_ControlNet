@@ -95,8 +95,6 @@ class Ade20kDataset(AbstractAde20k):
         self.resized_counter += bool(resized)
         annotation = np.array(annotation)
         
-        import pdb 
-        pdb.set_trace()
         # condition 
         condition = Image.fromarray(np.uint8(index2color_annotation(annotation, ade_config.palette)))
         # x = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
