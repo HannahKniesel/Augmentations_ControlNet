@@ -77,8 +77,8 @@ class Ade20kDataset(AbstractAde20k):
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
         # open image
-        init_image,_ = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
-        # init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        # init_image,_ = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
 
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
@@ -95,9 +95,9 @@ class Ade20kDataset(AbstractAde20k):
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)
-        annotation, resized = self.aspect_resize(annotation)
-        # annotation = self.aspect_resize(annotation)
-        # resized = False
+        # annotation, resized = self.aspect_resize(annotation)
+        annotation = self.aspect_resize(annotation)
+        resized = False
         self.resized_counter += bool(resized)
         annotation = np.array(annotation)
         

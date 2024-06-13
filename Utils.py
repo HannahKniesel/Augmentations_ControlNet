@@ -41,9 +41,9 @@ class CropToMaxSize(object):
 
 totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 # resize_transform = torchvision.transforms.Resize(size=512)
-resize_transform = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), CropToMaxSize(max_size=1536)])
+# resize_transform = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), CropToMaxSize(max_size=1536)])
 centercrop = torchvision.transforms.CenterCrop(512)
-# resize_transform = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), torchvision.transforms.CenterCrop(512)])
+resize_transform = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), torchvision.transforms.CenterCrop(512)])
 topil_transform = torchvision.transforms.ToPILImage()
 
 
