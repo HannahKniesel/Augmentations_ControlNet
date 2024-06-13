@@ -190,9 +190,9 @@ if __name__ == "__main__":
         controlnet = ControlNetModel.from_pretrained(checkpoint) #, torch_dtype="auto") #torch.float16)
         print(f"INFO::load default controlnet {checkpoint}")
 
-    controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
-    # from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
-    # controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype=torch.float16)
+    # controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
+    from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
+    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype=torch.float16)
 
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
@@ -223,13 +223,13 @@ if __name__ == "__main__":
             generator = torch.manual_seed(0 + aug_index)
             aug_index += 1
 
-            """output = controlnet_pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, generator=generator, image=condition)
+            output = controlnet_pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, image=condition) #generator=generator, 
             elapsed_time = 0
             loss = 0
             easy_loss = 0
-            hard_loss = 0"""
+            hard_loss = 0
             
-            output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
+            """output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
                                     controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
                                     real_image = init_img, 
                                     annotation = annotation,
                                     img_idx = img_idx,
-                                    )
+                                    )"""
 
             #try:
             #    augmented = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
