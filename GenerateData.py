@@ -229,8 +229,7 @@ if __name__ == "__main__":
             loss = 0
             easy_loss = 0
             hard_loss = 0
-            import pdb 
-            pdb.set_trace()
+            
             """output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
