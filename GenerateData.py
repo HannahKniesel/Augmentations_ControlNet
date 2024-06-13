@@ -305,7 +305,7 @@ if __name__ == "__main__":
         if((optimization_params["wandb_mode"] in ["detailed"]) or ((optimization_params["wandb_mode"] in ["every_100"]) and ((img_idx%100) == 0))):
             fig,axs = plt.subplots(1,len(augmentations))
             if(len(augmentations) == 1):
-                axs.imshow(a)
+                axs.imshow(augmentations[0])
             else:
                 for j, a in enumerate(augmentations): 
                     axs[j].imshow(a)
