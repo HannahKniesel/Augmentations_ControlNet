@@ -25,6 +25,12 @@ class AbstractAde20k(TorchDataset):
         if(root_path == ""):
             root_path = ade_config.data_path
         data_paths = sorted(glob(root_path+ade_config.images_folder+"*.jpg"))
+        data_paths = ["ADE_train_00007970.png",
+                        "ADE_train_00011548.png", 
+                        "ADE_train_00012753.png", 
+                        "ADE_train_00015154.png", 
+                        "ADE_train_00017975.png"]
+        data_paths = [root_path+ade_config.images_folder+p for p in data_paths]
         if((start_idx > 0) and (end_idx >= 0)):
             data_paths = data_paths[start_idx:end_idx]
             start_idx = start_idx
@@ -71,8 +77,8 @@ class Ade20kDataset(AbstractAde20k):
     def __getitem__(self, idx): 
         path = self.data_paths[idx]
         # open image
-        # init_image,_ = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
-        init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        init_image,_ = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
+        # init_image = self.aspect_resize(Image.open(path)) # resize shortest edge to 512
 
         init_image = np.array(init_image)
         if(len(init_image.shape) != 3):
@@ -89,15 +95,15 @@ class Ade20kDataset(AbstractAde20k):
         # open mask
         annotation_path = self.annotations_dir+Path(path).stem+ade_config.annotations_format
         annotation = Image.open(annotation_path)
-        # annotation, resized = self.aspect_resize(annotation)
-        annotation = self.aspect_resize(annotation)
-        resized = False
+        annotation, resized = self.aspect_resize(annotation)
+        # annotation = self.aspect_resize(annotation)
+        # resized = False
         self.resized_counter += bool(resized)
         annotation = np.array(annotation)
         
         # condition 
-        condition = Image.fromarray(np.uint8(index2color_annotation(annotation, ade_config.palette)))
-        # x = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
+        # condition = Image.fromarray(np.uint8(index2color_annotation(annotation, ade_config.palette)))
+        condition = self.transform(index2color_annotation(annotation, ade_config.palette)) # also normalize condition image to [0,1]
         # condition = torch.from_numpy(index2color_annotation(annotation, ade_config.palette)).permute(2,0,1) # condition is in range [0,255]
 
         
