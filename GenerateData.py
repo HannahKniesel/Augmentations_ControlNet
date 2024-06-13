@@ -229,7 +229,7 @@ if __name__ == "__main__":
             easy_loss = 0
             hard_loss = 0
             
-            output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
+            """output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
                                     controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
                                     real_image = init_img, 
                                     annotation = annotation,
                                     img_idx = img_idx,
-                                    )
+                                    )"""
 
             #try:
             #    augmented = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
