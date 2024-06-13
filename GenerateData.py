@@ -12,6 +12,7 @@ from datetime import timedelta
 import torch
 import wandb 
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 import ade_config
 from Datasets import Ade20kDataset
@@ -228,7 +229,8 @@ if __name__ == "__main__":
             loss = 0
             easy_loss = 0
             hard_loss = 0
-            
+            import pdb 
+            pdb.set_trace()
             """output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
                                     negative_prompt=args.negative_prompt, 
                                     image=condition, 
@@ -300,6 +302,15 @@ if __name__ == "__main__":
                     "AvgLoss Easy": np.mean(avg_loss_easy), 
                     "AvgLoss Hard": np.mean(avg_loss_hard), 
                     "AvgTime Augmentation": np.mean(mean_time_augmentation)})
+            
+        if((optimization_params["wandb_mode"] in ["detailed"]) or ((optimization_params["wandb_mode"] in ["every_100"]) and ((img_idx%100) == 0))):
+            fig,axs = plt.subplots(1,len(augmentations))
+            for j, a in enumerate(augmentations): 
+                axs[j].imhow(a)
+            plt.tight_layout()
+            plt.subplots_adjust(hspace=0.4)
+            wandb.log({f"Final Images": wandb.Image(plt)}) 
+            plt.close()
 
     end_time = time.time()
     elapsedtime = end_time - start_time
