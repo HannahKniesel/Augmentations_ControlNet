@@ -220,7 +220,7 @@ if __name__ == "__main__":
         aug_index = 0
         while(len(augmentations)<args.num_augmentations):            
             # TODO include new pipeline
-            generator = torch.manual_seed(0 + aug_index)
+            # generator = torch.manual_seed(0 + aug_index)
             aug_index += 1
 
             output = controlnet_pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, image=condition) #generator=generator, 
