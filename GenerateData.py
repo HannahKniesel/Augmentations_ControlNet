@@ -223,7 +223,7 @@ if __name__ == "__main__":
             generator = torch.manual_seed(0 + aug_index)
             aug_index += 1
 
-            output = pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, generator=generator, image=condition)
+            output = controlnet_pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, generator=generator, image=condition)
             elapsed_time = 0
             loss = 0
             easy_loss = 0
