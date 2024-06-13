@@ -192,7 +192,7 @@ if __name__ == "__main__":
     # controlnet_pipe = SDCNPipeline_Latents.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype="auto") #torch.float16)
     from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
     
-    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained(sd_ckpt, controlnet=controlnet, torch_dtype=torch.float16)
+    controlnet_pipe = StableDiffusionControlNetPipeline.from_pretrained(sd_ckpt, controlnet=controlnet) #, torch_dtype=torch.float16)
 
     controlnet_pipe.scheduler = UniPCMultistepScheduler.from_config(controlnet_pipe.scheduler.config)
     controlnet_pipe.enable_model_cpu_offload()
