@@ -1686,7 +1686,7 @@ class StableDiffusionControlNetPipeline(
 
             
             # plt.tight_layout()
-            wandb.log({f"Final Images": wandb.Image(plt)}) # TODO 
+            wandb.log({f"Log Images": wandb.Image(plt)}) # TODO 
             plt.close()
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept), elapsed_time, loss, easy_loss, hard_loss
