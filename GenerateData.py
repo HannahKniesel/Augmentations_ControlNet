@@ -304,8 +304,11 @@ if __name__ == "__main__":
             
         if((optimization_params["wandb_mode"] in ["detailed"]) or ((optimization_params["wandb_mode"] in ["every_100"]) and ((img_idx%100) == 0))):
             fig,axs = plt.subplots(1,len(augmentations))
-            for j, a in enumerate(augmentations): 
+            if(len(augmentations) == 1):
                 axs[j].imhow(a)
+            else:
+                for j, a in enumerate(augmentations): 
+                    axs[j].imhow(a)
             plt.tight_layout()
             plt.subplots_adjust(hspace=0.4)
             wandb.log({f"Final Images": wandb.Image(plt)}) 
