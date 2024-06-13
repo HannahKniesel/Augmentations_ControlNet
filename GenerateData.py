@@ -277,11 +277,11 @@ if __name__ == "__main__":
                 transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
                 aug_annotation = transform(annotation[0])
                 aug_annotations.extend([aug_annotation]*len(augmented))
-                if((img_idx == 0) and (redo_count == 0)):
+                """if((img_idx == 0) and (redo_count == 0)):
                     redo = True
                     redo_count +=1
                 else:
-                    redo = False
+                    redo = False"""
 
         # save augmentations
         save_augmentations_with_gt(aug_annotations, augmentations, path[0], args.start_idx_aug)
