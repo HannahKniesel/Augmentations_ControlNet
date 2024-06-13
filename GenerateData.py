@@ -89,7 +89,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Parameters: {args}")
 
-    torch.manual_seed(0)
+    # torch.manual_seed(0)
 
     # prompt mode
     if(args.prompt_type == "no_prompts"):
