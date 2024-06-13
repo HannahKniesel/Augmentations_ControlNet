@@ -210,70 +210,78 @@ if __name__ == "__main__":
     avg_loss_easy = []
     avg_loss_hard = []
 
+    redo = True
+    redo_count = 0
+
     # iterate over dataset
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
-        starttime_img = time.time()
-        print(prompt)
+        if(redo):
+            starttime_img = time.time()
+            print(prompt)
 
-        
-        # generate augmentations
-        augmentations = []
-        aug_annotations = []
-        aug_index = 0
-        while(len(augmentations)<args.num_augmentations):            
-            # TODO include new pipeline
-            # generator = torch.manual_seed(0 + aug_index)
-            aug_index += 1
-
-            output = controlnet_pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, image=condition) #generator=generator, 
-            elapsed_time = 0
-            loss = 0
-            easy_loss = 0
-            hard_loss = 0
             
-            """output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
-                                    negative_prompt=args.negative_prompt, 
-                                    image=condition, 
-                                    controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
-                                    guidance_scale = args.guidance_scale,
-                                    num_inference_steps=args.inference_steps, 
-                                    guess_mode = guess_mode,
-                                    height = condition.shape[-2], 
-                                    width = condition.shape[-1],
-                                    num_images_per_prompt = 1, 
-                                    generator=generator, 
-                                    img_name = Path(path[0]).stem,
-                                    optimization_arguments = optimization_params, 
-                                    easy_model = easy_model, 
-                                    hard_model = hard_model, 
-                                    real_image = init_img, 
-                                    annotation = annotation,
-                                    img_idx = img_idx,
-                                    )"""
+            # generate augmentations
+            augmentations = []
+            aug_annotations = []
+            aug_index = 0
+            while(len(augmentations)<args.num_augmentations):            
+                # TODO include new pipeline
+                # generator = torch.manual_seed(0 + aug_index)
+                aug_index += 1
 
-            #try:
-            #    augmented = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
-            #    num_nsfw = np.sum(output.nsfw_content_detected)
-            #except: 
-            augmented = output.images
-            num_nsfw = 0
+                output = controlnet_pipe(prompt[0] + args.additional_prompt, num_inference_steps=args.inference_steps, image=condition) #generator=generator, 
+                elapsed_time = 0
+                loss = 0
+                easy_loss = 0
+                hard_loss = 0
+                
+                """output, elapsed_time, loss, easy_loss, hard_loss = controlnet_pipe(prompt[0] + args.additional_prompt, #+"best quality, extremely detailed" # 
+                                        negative_prompt=args.negative_prompt, 
+                                        image=condition, 
+                                        controlnet_conditioning_scale=args.controlnet_conditioning_scale, 
+                                        guidance_scale = args.guidance_scale,
+                                        num_inference_steps=args.inference_steps, 
+                                        guess_mode = guess_mode,
+                                        height = condition.shape[-2], 
+                                        width = condition.shape[-1],
+                                        num_images_per_prompt = 1, 
+                                        generator=generator, 
+                                        img_name = Path(path[0]).stem,
+                                        optimization_arguments = optimization_params, 
+                                        easy_model = easy_model, 
+                                        hard_model = hard_model, 
+                                        real_image = init_img, 
+                                        annotation = annotation,
+                                        img_idx = img_idx,
+                                        )"""
 
-            print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Easy = {easy_loss} | Loss Hard = {hard_loss}")
+                #try:
+                #    augmented = [elem for elem, nsfw in zip(output.images, output.nsfw_content_detected) if not nsfw]
+                #    num_nsfw = np.sum(output.nsfw_content_detected)
+                #except: 
+                augmented = output.images
+                num_nsfw = 0
 
-            total_nsfw += num_nsfw
-            augmentations.extend(augmented)
-            avg_loss.append(loss)
-            avg_loss_easy.append(easy_loss)
-            avg_loss_hard.append(hard_loss)
+                print(f"INFO:: Time elapsed = {elapsed_time} | Loss = {loss} | Loss Easy = {easy_loss} | Loss Hard = {hard_loss}")
+
+                total_nsfw += num_nsfw
+                augmentations.extend(augmented)
+                avg_loss.append(loss)
+                avg_loss_easy.append(easy_loss)
+                avg_loss_hard.append(hard_loss)
 
 
-            mean_time_augmentation.append(elapsed_time)
+                mean_time_augmentation.append(elapsed_time)
 
-            # make sure annotation and images have similar resolution
-            transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
-            aug_annotation = transform(annotation[0])
-            aug_annotations.extend([aug_annotation]*len(augmented))
-            
+                # make sure annotation and images have similar resolution
+                transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
+                aug_annotation = transform(annotation[0])
+                aug_annotations.extend([aug_annotation]*len(augmented))
+                if((img_idx == 0) and (redo_count == 0)):
+                    redo = True
+                    redo_count +=1
+                else:
+                    redo = False
 
         # save augmentations
         save_augmentations_with_gt(aug_annotations, augmentations, path[0], args.start_idx_aug)

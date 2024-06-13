@@ -29,8 +29,8 @@ class AbstractAde20k(TorchDataset):
                         "ADE_train_00011548.jpg", 
                         "ADE_train_00012753.jpg", 
                         "ADE_train_00015154.jpg", 
-                        "ADE_train_00017975.jpg"]"""
-        data_paths = [root_path+ade_config.images_folder+p for p in data_paths]
+                        "ADE_train_00017975.jpg"]
+        data_paths = [root_path+ade_config.images_folder+p for p in data_paths]"""
         if((start_idx > 0) and (end_idx >= 0)):
             data_paths = data_paths[start_idx:end_idx]
             start_idx = start_idx
