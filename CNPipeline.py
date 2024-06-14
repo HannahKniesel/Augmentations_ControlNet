@@ -1696,8 +1696,8 @@ class StableDiffusionControlNetPipeline(
             plt.close()
 
         if((optimization_arguments['wandb_mode'] == "detailed") or ((optimization_arguments['wandb_mode'] == "every_100") and ((img_idx % 100) == 0))):
-            s = 5
-            fig, axis = plt.subplots(6, 1, figsize=(2*s, 4*s))
+            s = 6
+            fig, axis = plt.subplots(7, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])
             plt.suptitle(f"Loss = {loss} \nEasy Loss = {easy_loss}\nHard Loss = {hard_loss}", fontsize=20)
             axis[0].set_title(f"Classes: {classes}\nPrompt: {prompt}\nGT Mask")
@@ -1720,14 +1720,17 @@ class StableDiffusionControlNetPipeline(
 
             axis[4].set_title("Generated Image")
             axis[4].imshow(image[0])
+
+            axis[5].set_title("Real Image")
+            axis[5].imshow(real_image[0].permute(1,2,0))
             
-            axis[5].set_title("Uncertainty Heatmap")
-            im = axis[5].imshow(heatmap.squeeze(), cmap="Reds")
+            axis[6].set_title("Uncertainty Heatmap")
+            im = axis[6].imshow(heatmap.squeeze(), cmap="Reds")
 
             for ax in axis: 
                 ax.set_axis_off()
 
-            axins = inset_axes(axis[5],
+            axins = inset_axes(axis[6],
                     width="100%",  
                     height="5%",
                     loc='lower center',
