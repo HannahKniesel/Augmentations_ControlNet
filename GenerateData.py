@@ -120,7 +120,9 @@ if __name__ == "__main__":
                             "w_hard": args.w_hard,
                             "w_easy": args.w_easy,
                             "mixed_precision": args.mixed_precision,
-                            "cos_annealing": args.cos_annealing}, 
+                            "cos_annealing": args.cos_annealing}
+    
+
                             
     if(args.optimize):
         group = ""

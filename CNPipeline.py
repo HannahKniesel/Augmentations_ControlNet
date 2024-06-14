@@ -1260,8 +1260,7 @@ class StableDiffusionControlNetPipeline(
         # TODO add noise to real image and start with this
         # Convert images to latent space
         # from diffusers import DDPMScheduler
-        import pdb 
-        pdb.set_trace()
+        
         if(optimization_arguments["init_noise_factor"] != 0):
             latents, timesteps = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
 
