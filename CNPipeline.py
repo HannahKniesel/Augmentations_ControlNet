@@ -943,12 +943,12 @@ class StableDiffusionControlNetPipeline(
         noisy_image = self.vae.decode(noisy_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
         noisy_image = self.image_processor.denormalize(noisy_image)
 
-        fig,axs = plt.subplots(1,2)
+        """fig,axs = plt.subplots(1,2)
         axs[0].imshow(real_image.squeeze().permute(1,2,0))
 
         axs[1].imshow(noisy_image.cpu().squeeze().permute(1,2,0))
        
-        plt.savefig("./noisylatents.png")
+        plt.savefig("./noisylatents.png")"""
         return noisy_latents, timesteps, start_denoising_idx
 
 
