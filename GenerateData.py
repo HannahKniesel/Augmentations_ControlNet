@@ -121,7 +121,8 @@ if __name__ == "__main__":
             group += f"{args.w_easy}xEasy"
         if(args.hard_model != ""):
             group += f"+{args.w_hard}xHard"
-        group += f"_lr-{args.lr}_i-{args.iters}"
+        group += f"_lr{args.lr}_i{args.iters}"
+        group += f"_is{args.start_t}-{args.end_t}"
     else: 
         group = "baseline"
 
