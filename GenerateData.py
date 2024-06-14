@@ -60,6 +60,9 @@ if __name__ == "__main__":
     parser.add_argument('--end_idx', type = int, default=-1)
     parser.add_argument('--start_idx_aug', type = int, default=0)
     parser.add_argument('--subset', type = float, default=1.)
+    parser.add_argument('--init_noise_factor', type = float, default=0.0)
+
+    
 
 
     # ControlNet Parameters
@@ -111,12 +114,14 @@ if __name__ == "__main__":
                             "iters": args.iters,
                             "optimizer": args.optimizer, 
                             "optim_every_n_steps": args.optim_every_n_steps,
+                            "init_noise_factor": args.init_noise_factor,
                             "start_t": args.start_t, 
                             "end_t": args.end_t,
                             "w_hard": args.w_hard,
                             "w_easy": args.w_easy,
                             "mixed_precision": args.mixed_precision,
-                            "cos_annealing": args.cos_annealing}
+                            "cos_annealing": args.cos_annealing}, 
+                            
     if(args.optimize):
         group = ""
         if(args.easy_model != ""):

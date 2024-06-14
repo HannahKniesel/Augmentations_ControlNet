@@ -914,6 +914,36 @@ class StableDiffusionControlNetPipeline(
     def get_curr_lr(self, eta_max, eta_min, curr_step, max_step):
         return eta_min + 0.5*(eta_max-eta_min)*(1+np.cos(curr_step*np.pi/max_step))
 
+    def init_latents_from_real(self, real_image, num_inference_steps, timesteps, generator, factor = 0.5, device = "cuda"):
+        init_noise_scheduler = UniPCMultistepScheduler.from_config(self.scheduler.config)
+        init_noise_scheduler.set_timesteps(num_inference_steps = num_inference_steps, device=device, timesteps = None) #num_inference_steps, device=device, **kwargs)
+
+        # init_noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
+        latents = self.vae.encode(real_image.to(device)).latent_dist.sample()
+        # latents = self.vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
+        latents = latents * self.vae.config.scaling_factor
+
+        # Sample noise that we'll add to the latents
+        noise = torch.randn_like(latents)
+        # Sample a random timestep for each image
+        start_denoising_idx = int(factor*len(timesteps))
+        noising_timesteps = torch.Tensor([timesteps[start_denoising_idx]]).long()
+        timesteps = timesteps[start_denoising_idx:]
+        # timesteps = torch.randint(0, init_noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device)
+        # timesteps = timesteps.long()
+
+        # Add noise to the latents according to the noise magnitude at each timestep
+        # (this is the forward diffusion process)
+        noisy_latents = init_noise_scheduler.add_noise(latents, noise, noising_timesteps)
+        noisy_image = self.vae.decode(noisy_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
+        noisy_image = self.image_processor.denormalize(noisy_image)
+
+        fig,axs = plt.subplots(1,2)
+        axs[0].imshow(real_image.squeeze().permute(1,2,0))
+        axs[1].imshow(noisy_image.cpu().squeeze().permute(1,2,0))
+        plt.savefig("./noisylatents.png")
+        return noisy_latents, timesteps
+
 
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
@@ -1226,6 +1256,19 @@ class StableDiffusionControlNetPipeline(
             latents,
         )
 
+
+        # TODO add noise to real image and start with this
+        # Convert images to latent space
+        # from diffusers import DDPMScheduler
+        import pdb 
+        pdb.set_trace()
+        if(optimization_arguments["init_noise_factor"] != 0):
+            latents, timesteps = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
+
+        
+        
+        # end TODO
+
         # prepare mixed precision for optimization
         if(optimization_arguments["mixed_precision"] == "bf16"): 
             weight_dtype = torch.bfloat16
@@ -1306,7 +1349,7 @@ class StableDiffusionControlNetPipeline(
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
                             optim_timesteps = timesteps[:(i+1)]
                             print(f"Timesteps for single step prediction: {optim_timesteps}")
-                            scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
+                            # scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
                             # print(f"set_timesteps to {optim_timesteps}")
                             
                             if(optimization_arguments["cos_annealing"]):
