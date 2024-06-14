@@ -921,7 +921,7 @@ class StableDiffusionControlNetPipeline(
         # init_noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
         latents = self.vae.encode(real_image.to(device)).latent_dist.sample()
         # latents = self.vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
-        latents = latents * self.vae.config.scaling_factor
+        # latents = latents * self.vae.config.scaling_factor
 
         # Sample noise that we'll add to the latents
         noise = torch.randn_like(latents)
@@ -934,15 +934,19 @@ class StableDiffusionControlNetPipeline(
 
         # Add noise to the latents according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        noisy_latents = init_noise_scheduler.add_noise(latents, noise, noising_timesteps)
+        
+        noisy_latents = init_noise_scheduler.add_noise(latents * self.vae.config.scaling_factor, noise, noising_timesteps)
+        # noisy_image = self.decode_latents(noisy_latents)
         noisy_image = self.vae.decode(noisy_latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[0]
         noisy_image = self.image_processor.denormalize(noisy_image)
 
         fig,axs = plt.subplots(1,2)
         axs[0].imshow(real_image.squeeze().permute(1,2,0))
+
         axs[1].imshow(noisy_image.cpu().squeeze().permute(1,2,0))
+       
         plt.savefig("./noisylatents.png")
-        return noisy_latents, timesteps
+        return noisy_latents, timesteps, start_denoising_idx
 
 
     @torch.no_grad()
@@ -1260,9 +1264,9 @@ class StableDiffusionControlNetPipeline(
         # TODO add noise to real image and start with this
         # Convert images to latent space
         # from diffusers import DDPMScheduler
-        
+        start_index_denoising = 0
         if(optimization_arguments["init_noise_factor"] != 0):
-            latents, timesteps = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
+            latents, timesteps, start_index_denoising = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
 
         
         
@@ -1338,7 +1342,9 @@ class StableDiffusionControlNetPipeline(
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             with torch.autocast(device_type='cuda', dtype=weight_dtype): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
 
-                for i, t in enumerate(timesteps):
+                for i_init, t in enumerate(timesteps):
+                    i = i + start_index_denoising
+                    print(f"INFO::Current timestep = {t} at index {i}.")
                     torch.cuda.empty_cache()                    
                     final_image = None
                     # START OPTIMIZATION 
