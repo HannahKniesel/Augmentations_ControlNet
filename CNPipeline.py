@@ -917,8 +917,7 @@ class StableDiffusionControlNetPipeline(
     def init_latents_from_real(self, real_image, num_inference_steps, timesteps, generator, factor = 0.5, device = "cuda"):
         init_noise_scheduler = UniPCMultistepScheduler.from_config(self.scheduler.config)
         init_noise_scheduler.set_timesteps(num_inference_steps = num_inference_steps, device=device, timesteps = None) #num_inference_steps, device=device, **kwargs)
-        import pdb 
-        pdb.set_trace()
+        
         import torchvision
         norm = torchvision.transforms.Normalize([0.5], [0.5])
         real_image_normalized = norm(real_image)
