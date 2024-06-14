@@ -1343,7 +1343,7 @@ class StableDiffusionControlNetPipeline(
             with torch.autocast(device_type='cuda', dtype=weight_dtype): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
 
                 for i_init, t in enumerate(timesteps):
-                    i = i + start_index_denoising
+                    i = i_init + start_index_denoising
                     print(f"INFO::Current timestep = {t} at index {i}.")
                     torch.cuda.empty_cache()                    
                     final_image = None
