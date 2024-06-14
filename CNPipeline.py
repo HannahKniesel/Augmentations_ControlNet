@@ -1225,7 +1225,6 @@ class StableDiffusionControlNetPipeline(
             generator,
             latents,
         )
-        latents = (latents - torch.mean(latents))/torch.std(latents)
 
         # prepare mixed precision for optimization
         if(optimization_arguments["mixed_precision"] == "bf16"): 

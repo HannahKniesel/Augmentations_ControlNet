@@ -59,6 +59,8 @@ if __name__ == "__main__":
     parser.add_argument('--start_idx', type = int, default=0)
     parser.add_argument('--end_idx', type = int, default=-1)
     parser.add_argument('--start_idx_aug', type = int, default=0)
+    parser.add_argument('--subset', type = float, default=1.)
+
 
     # ControlNet Parameters
     parser.add_argument('--controlnet', type=str, choices=["1.1", "1.0", "2.1"], default="1.1")
@@ -122,7 +124,9 @@ if __name__ == "__main__":
         if(args.hard_model != ""):
             group += f"+{args.w_hard}xHard"
         group += f"_lr{args.lr}_i{args.iters}"
-        group += f"_is{args.start_t}-{args.end_t}"
+        group += f"_o{args.start_t}-{args.end_t}"
+        group += f"_is{args.inference_steps}"
+
     else: 
         group = "baseline"
 
@@ -211,20 +215,24 @@ if __name__ == "__main__":
     avg_loss_easy = []
     avg_loss_hard = []
 
-    redo = True
-    redo_count = 0
+    augmentation_indices = []
+    if(args.subset != 1):
+        np.random.seed(0)
+        augmentation_indices = np.random.choice(len(dataset), size=(int(args.subset*len(dataset))))
 
     # iterate over dataset
     for img_idx, (init_img, condition, annotation, prompt, path) in enumerate(dataloader):
-        if(redo):
-            starttime_img = time.time()
-            print(prompt)
+        starttime_img = time.time()
+        print(prompt)
 
-            
-            # generate augmentations
-            augmentations = []
-            aug_annotations = []
-            aug_index = 0
+        
+        # generate augmentations
+        augmentations = []
+        aug_annotations = []
+        aug_index = 0
+
+        if((args.subset == 1.) or (img_idx in augmentation_indices) ):
+            # make augmentations
             while(len(augmentations)<args.num_augmentations):            
                 # TODO include new pipeline
                 # generator = torch.manual_seed(0 + aug_index)
@@ -278,14 +286,10 @@ if __name__ == "__main__":
                 transform = torchvision.transforms.Compose([torchvision.transforms.CenterCrop(augmented[0].size[::-1]), torchvision.transforms.ToPILImage()])
                 aug_annotation = transform(annotation[0])
                 aug_annotations.extend([aug_annotation]*len(augmented))
-                """if((img_idx == 0) and (redo_count == 0)):
-                    redo = True
-                    redo_count +=1
-                else:
-                    redo = False"""
+                
 
-        # save augmentations
-        save_augmentations_with_gt(aug_annotations, augmentations, path[0], args.start_idx_aug)
+            # save augmentations
+            save_augmentations_with_gt(aug_annotations, augmentations, path[0], args.start_idx_aug)
 
         
         endtime_img = time.time()
