@@ -132,10 +132,11 @@ if __name__ == "__main__":
             group += f"+{args.w_hard}xHard"
         group += f"_lr{args.lr}_i{args.iters}"
         group += f"_o{args.start_t}-{args.end_t}"
-        group += f"_is{args.inference_steps}"
-
     else: 
         group = "baseline"
+    group += f"_is{args.inference_steps}"
+    group += f"_istart{args.init_noise_factor}"
+
 
     if(bool(args.wandb_mode in ["standard", "detailed", "every_100"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
