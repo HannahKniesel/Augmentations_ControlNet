@@ -1261,16 +1261,7 @@ class StableDiffusionControlNetPipeline(
         )
 
 
-        # TODO add noise to real image and start with this
-        # Convert images to latent space
-        # from diffusers import DDPMScheduler
-        start_index_denoising = 0
-        if(optimization_arguments["init_noise_factor"] != 0):
-            latents, timesteps, start_index_denoising = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
 
-        
-        
-        # end TODO
 
         # prepare mixed precision for optimization
         if(optimization_arguments["mixed_precision"] == "bf16"): 
@@ -1338,6 +1329,18 @@ class StableDiffusionControlNetPipeline(
         is_controlnet_compiled = is_compiled_module(self.controlnet)
         is_torch_higher_equal_2_1 = is_torch_version(">=", "2.1")
         
+
+        # TODO add noise to real image and start with this
+        # Convert images to latent space
+        # from diffusers import DDPMScheduler
+        start_index_denoising = 0
+        if(optimization_arguments["init_noise_factor"] != 0):
+            latents, timesteps, start_index_denoising = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
+
+        
+        
+        # end TODO
+            
         start_time_image = time.time()
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             with torch.autocast(device_type='cuda', dtype=weight_dtype): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
