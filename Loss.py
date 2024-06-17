@@ -76,7 +76,7 @@ def loss_fct(generated_image, gt, easy_model, w_easy, hard_model, w_hard, visual
         logits_hard = hard_model(generated_image) #, mode="tensor") 
         gt_shape = logits_hard.shape[-2:] 
     else: 
-        logits_hard = torch.Tensor([0.], device = device)
+        logits_hard = torch.tensor([0.], device = device)
 
     # prepare GT masks
     gt = torchvision.transforms.functional.center_crop(gt, generated_image.shape[-2:])

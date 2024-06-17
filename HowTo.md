@@ -113,8 +113,12 @@ python make_mcd.py --jit_dir ./base_models/03-06-2024/MCD/ --mcd_samples 5
 
 ## Run docker 
 ```bash 
-docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v /media/hansel/SSD/Code/SyntheticData/Augmentations_ControlNet/:/Augmentations_ControlNet/ -v /media/hansel/SSD/Data/StandardCV/:/Augmentations_ControlNet/data/ -v /media/hansel/SSD/Code/SyntheticData/CN_Training/ControlNet/models/:/Augmentations_ControlNet/models/ -v /media/hansel/SSD/Code/SyntheticData/segmentationAL/work_dirs/:/Augmentations_ControlNet/seg_models/ -v /media/hansel/SSD/Code/SyntheticData/ControlNet_HF/diffusers/examples/controlnet/trained_model/:/Augmentations_ControlNet/controlnet/ -w /Augmentations_ControlNet/ --name augmentation_c hannahkniesel/augmentation_controlnet bash
+docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v /media/hansel/SSD/Code/SyntheticData/Augmentations_ControlNet/:/Augmentations_ControlNet/ -v /media/hansel/SSD/Data/StandardCV/:/Augmentations_ControlNet/data/ -v /media/hansel/SSD/Code/SyntheticData/CN_Training/ControlNet/models/:/Augmentations_ControlNet/models/ -v /media/hansel/SSD/Code/SyntheticData/segmentationAL/work_dirs/:/Augmentations_ControlNet/seg_models/ -v /media/hansel/SSD/Code/SyntheticData/ControlNet_HF/diffusers/examples/controlnet/trained_model/:/Augmentations_ControlNet/controlnet/ -w /Augmentations_ControlNet/ --name augmentation_c hannahkniesel/augmentation_controlnet:latentoptim bash
 ```
+
+
+python -u GenerateData.py --experiment_name "512x512/initnoise-01/" --controlnet "1.0" --finetuned_checkpoint "" --prompt_type "gt" --wandb_project "512x512" --inference_steps 5 --data_to_augment "./data/ade/ADEChallengeData2016/" --start_t 0 --end_t 5 --mixed_precision "fp16" --num_augmentations 1 --wandb_mode "every_100" --optimizer "sgd" --lr 5 --iters 5 --hard_model "" --easy_model "" --w_easy 1 --w_hard 1 --end_idx 10 --init_noise_factor 0.1
+
 
 ## Generate and Validate data
 

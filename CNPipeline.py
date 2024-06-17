@@ -49,7 +49,7 @@ from diffusers.pipelines.controlnet.multicontrolnet import MultiControlNetModel
 # from diffusers import UniPCMultistepScheduler
 from Scheduler import UniPCMultistepScheduler
 
-from Utils import totensor_transform
+from Utils import totensor_transform, norm
 from Loss import loss_fct, get_prediction
 
 
@@ -918,8 +918,6 @@ class StableDiffusionControlNetPipeline(
         init_noise_scheduler = UniPCMultistepScheduler.from_config(self.scheduler.config)
         init_noise_scheduler.set_timesteps(num_inference_steps = num_inference_steps, device=device, timesteps = None) #num_inference_steps, device=device, **kwargs)
         
-        import torchvision
-        norm = torchvision.transforms.Normalize([0.5], [0.5])
         real_image_normalized = norm(real_image)
         # init_noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
         latents = self.vae.encode(real_image_normalized.to(device)).latent_dist.sample()
@@ -1350,7 +1348,7 @@ class StableDiffusionControlNetPipeline(
 
                 for i_init, t in enumerate(timesteps):
                     i = i_init + start_index_denoising
-                    print(f"INFO::Current timestep = {t} at index {i}.")
+                    # print(f"INFO::Current timestep = {t} at index {i}.")
                     torch.cuda.empty_cache()                    
                     final_image = None
                     # START OPTIMIZATION 
@@ -1672,16 +1670,21 @@ class StableDiffusionControlNetPipeline(
         # print(f"Final image min: {loss_image.min()}")
         # print(f"Final image shape: {loss_image.shape}")
 
-        # for logging only: use weights of 1 to make different runs with different weights comparable
-        with torch.autocast(device_type='cuda', dtype=weight_dtype):
-            easy_loss, hard_loss, loss, heatmap = loss_fct(loss_image, 
-                                annotation, 
-                                easy_model, 
-                                optimization_arguments["w_easy"], 
-                                hard_model, 
-                                optimization_arguments["w_hard"], 
-                                visualize = True, 
-                                by_value = True) 
+
+        if((easy_model is None) or (hard_model is None)): 
+            easy_loss, hard_loss, loss = -1, -1, -1
+            heatmap = torch.zeros((1,512,512))
+        else: 
+            # for logging only: use weights of 1 to make different runs with different weights comparable
+            with torch.autocast(device_type='cuda', dtype=weight_dtype):
+                easy_loss, hard_loss, loss, heatmap = loss_fct(loss_image, 
+                                    annotation, 
+                                    easy_model, 
+                                    optimization_arguments["w_easy"], 
+                                    hard_model, 
+                                    optimization_arguments["w_hard"], 
+                                    visualize = True, 
+                                    by_value = True) 
 
 
         title = f"{img_name}\nPrompt: {prompt}\nGeneration time: {str(timedelta(seconds=elapsed_time))}sec\nLoss: {loss}"

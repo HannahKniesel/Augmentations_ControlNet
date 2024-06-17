@@ -45,6 +45,7 @@ totensor_transform = torchvision.transforms.Compose([torchvision.transforms.ToTe
 centercrop = torchvision.transforms.CenterCrop(512)
 resize_transform = torchvision.transforms.Compose([torchvision.transforms.Resize(size=512), torchvision.transforms.CenterCrop(512)])
 topil_transform = torchvision.transforms.ToPILImage()
+norm = torchvision.transforms.Normalize([0.5], [0.5])
 
 
 def get_name(path, idx):
