@@ -1348,7 +1348,7 @@ class StableDiffusionControlNetPipeline(
             with torch.autocast(device_type='cuda', dtype=weight_dtype): #torch.cuda.amp.autocast(dtype = weight_dtype, enabled=enable_mp):
 
                 for i_init, t in enumerate(timesteps):
-                    i = i_init + start_index_denoising
+                    i = i_init# + start_index_denoising
                     # print(f"INFO::Current timestep = {t} at index {i}.")
                     torch.cuda.empty_cache()                    
                     final_image = None
@@ -1386,7 +1386,7 @@ class StableDiffusionControlNetPipeline(
 
                                 # START PROJECTION TO IMAGE SPACE: Denoise within a single step
                                 scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
-                                scheduler_optim.set_begin_index(i+start_index_denoising)
+                                scheduler_optim.set_begin_index(i)
 
                                 # Relevant thread:
                                 # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
