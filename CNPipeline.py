@@ -1338,7 +1338,7 @@ class StableDiffusionControlNetPipeline(
         print(f"INFO::Denoising steps = {timesteps}")
         if(optimization_arguments["init_noise_factor"] != 0):
             latents, timesteps, start_index_denoising = self.init_latents_from_real(real_image, num_inference_steps, timesteps, generator, optimization_arguments["init_noise_factor"], device)
-            print(f"INFO::Remaining timesteps after init denoising with factor {optimization_arguments["init_noise_factor"]} = {timesteps}")
+            print(f"INFO::Remaining timesteps after init denoising with factor {optimization_arguments['init_noise_factor']} = {timesteps}")
         
         
         # end TODO
