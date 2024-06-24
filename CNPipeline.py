@@ -1386,7 +1386,7 @@ class StableDiffusionControlNetPipeline(
 
                                 # START PROJECTION TO IMAGE SPACE: Denoise within a single step
                                 scheduler_optim.set_timesteps(num_inference_steps = None, device=device, timesteps = optim_timesteps.cpu().numpy(), **kwargs) #num_inference_steps, device=device, **kwargs)
-                                scheduler_optim.set_begin_index(i)
+                                scheduler_optim.set_begin_index(i+start_index_denoising)
 
                                 # Relevant thread:
                                 # https://dev-discuss.pytorch.org/t/cudagraphs-in-pytorch-2-0/1428
@@ -1699,7 +1699,7 @@ class StableDiffusionControlNetPipeline(
             wandb.log({f"Images": wandb.Image(plt)}) 
             plt.close()
 
-        if((optimization_arguments['wandb_mode'] == "detailed") or ((optimization_arguments['wandb_mode'] == "every_100") and ((img_idx % 100) == 0))):
+        if((optimization_arguments['wandb_mode'] in ["detailed", "debug"]) or ((optimization_arguments['wandb_mode'] == "every_100") and ((img_idx % 100) == 0))):
             s = 6
             fig, axis = plt.subplots(7, 1, figsize=(2*s, 4*s))
             classes = ", ".join(prompt.split(",")[:-3])

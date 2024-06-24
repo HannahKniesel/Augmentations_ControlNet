@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     # Logging Parameters
     parser.add_argument('--experiment_name', type = str, default="")
-    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed", "every_100"], default = "every_100")
+    parser.add_argument('--wandb_mode', type=str, choices = ["off", "standard", "detailed", "every_100", "debug"], default = "every_100")
     parser.add_argument('--wandb_project', type=str, default="")
     parser.add_argument('--seed', type = int, default=7353)
 
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     group += f"_istart{args.init_noise_factor}"
 
 
-    if(bool(args.wandb_mode in ["standard", "detailed", "every_100"])):
+    if(bool(args.wandb_mode in ["standard", "detailed", "every_100", "debug"])):
         os.environ['WANDB_PROJECT']= args.wandb_project
         """group = "Optimization" if optimization_params['do_optimize'] else "Base"
         if  optimization_params['do_optimize']: """
@@ -318,13 +318,13 @@ if __name__ == "__main__":
               {total_nsfw}/{len(augmentations)*(img_idx+1)} = {int((total_nsfw*100)/(len(augmentations)*(img_idx+1)))}% contain NSFW |\
               Crop Images = {dataset.resized_counter}")
         
-        if(optimization_params["wandb_mode"] in ["standard", "detailed", "every_100"]):
+        if(optimization_params["wandb_mode"] in ["standard", "detailed", "every_100", "debug"]):
             wandb.log({"AvgLoss": np.mean(avg_loss), 
                     "AvgLoss Easy": np.mean(avg_loss_easy), 
                     "AvgLoss Hard": np.mean(avg_loss_hard), 
                     "AvgTime Augmentation": np.mean(mean_time_augmentation)})
             
-        if((optimization_params["wandb_mode"] in ["detailed"]) or ((optimization_params["wandb_mode"] in ["every_100"]) and ((img_idx%100) == 0))):
+        if((optimization_params["wandb_mode"] in ["detailed", "debug"]) or ((optimization_params["wandb_mode"] in ["every_100"]) and ((img_idx%100) == 0))):
             fig,axs = plt.subplots(1,len(augmentations))
             if(len(augmentations) == 1):
                 axs.imshow(augmentations[0])
@@ -341,7 +341,7 @@ if __name__ == "__main__":
     elapsedtime_str = str(timedelta(seconds=elapsedtime))
     print(f"Time to generate {args.num_augmentations} augmentations for {len(dataset)} images was {elapsedtime_str}")
     print(f"Average loss over dataset is {np.mean(avg_loss)}.")
-    if(optimization_params["wandb_mode"] in ["standard", "detailed", "every_100"]):
+    if(optimization_params["wandb_mode"] in ["standard", "detailed", "every_100", "debug"]):
         wandb.log({"Dataset Loss": np.mean(avg_loss), 
                     "Final Time Avg" : np.mean(mean_time_augmentation)})
 
