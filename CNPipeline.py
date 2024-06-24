@@ -1354,7 +1354,7 @@ class StableDiffusionControlNetPipeline(
                     final_image = None
                     # START OPTIMIZATION 
                     if(optimization_arguments["do_optimize"] and ((i % optimization_arguments["optim_every_n_steps"]) == 0) and (i >= optimization_arguments['start_t']) and (i <= optimization_arguments['end_t'])):
-                        with torch.enable_grad(): # torch.no_grad(): #
+                        with torch.enable_grad(): #torch.no_grad(): #
                             # define scheduler for projection to image space (single step denoising)
                             scheduler_optim = UniPCMultistepScheduler.from_config(self.scheduler.config)
                             optim_timesteps = timesteps[:(i+1)]
@@ -1473,22 +1473,6 @@ class StableDiffusionControlNetPipeline(
                                 # TODO why do I need to put unet to cuda again? 
                                 self.unet.to("cuda")
 
-                                # compute loss
-                                """print(f"\nFinal image type: {type(final_image)}")
-                                print(f"Final image max: {final_image.max()}")
-                                print(f"Final image min: {final_image.min()}")
-                                print(f"Final image shape: {final_image.shape}")
-                                print(f"Final image device: {final_image.is_cuda}")
-                                print(f"\nReal image type: {type(real_image)}")
-                                print(f"Real image max: {real_image.max()}")
-                                print(f"Real image min: {real_image.min()}")
-                                print(f"Real image shape: {real_image.shape}")
-                                print(f"Real image device: {real_image.is_cuda}")
-                                print(f"\nannotation type: {type(annotation)}")
-                                print(f"annotation max: {annotation.max()}")
-                                print(f"annotation min: {annotation.min()}")
-                                print(f"annotation shape: {annotation.shape}")
-                                print(f"annotation device: {annotation.is_cuda}")""" 
                                 loss, _ = loss_fct(final_image, 
                                                    annotation, 
                                                    easy_model, 

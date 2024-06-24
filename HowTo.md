@@ -113,7 +113,7 @@ python make_mcd.py --jit_dir ./base_models/03-06-2024/MCD/ --mcd_samples 5
 
 ## Run docker 
 ```bash 
-docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v /media/hansel/SSD/Code/SyntheticData/Augmentations_ControlNet/:/Augmentations_ControlNet/ -v /media/hansel/SSD/Data/StandardCV/:/Augmentations_ControlNet/data/ -v /media/hansel/SSD/Code/SyntheticData/CN_Training/ControlNet/models/:/Augmentations_ControlNet/models/ -v /media/hansel/SSD/Code/SyntheticData/segmentationAL/work_dirs/:/Augmentations_ControlNet/seg_models/ -v /media/hansel/SSD/Code/SyntheticData/ControlNet_HF/diffusers/examples/controlnet/trained_model/:/Augmentations_ControlNet/controlnet/ -w /Augmentations_ControlNet/ --name augmentation_c hannahkniesel/augmentation_controlnet:latentoptim bash
+docker run --gpus all -it -p 8888:8888 --rm --ipc=host -v /media/hansel/SSD/Code/SyntheticData/Augmentations_ControlNet/:/Augmentations_ControlNet/ -v /media/hansel/SSD/Data/StandardCV/:/Augmentations_ControlNet/data/ -v /media/hansel/SSD/Code/SyntheticData/CN_Training/ControlNet/models/:/Augmentations_ControlNet/models/ -v /media/hansel/SSD/Code/SyntheticData/segmentationAL/work_dirs/:/Augmentations_ControlNet/seg_models/ -v /media/hansel/SSD/Weights/AL_Segmentation/base_models/:/Augmentations_ControlNet/base_models/ -w /Augmentations_ControlNet/ --name augmentation_c hannahkniesel/augmentation_controlnet:latentoptim bash
 ```
 
 
